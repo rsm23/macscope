@@ -1,0 +1,128 @@
+name: Release MacScope
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, for example 1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macscope-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Sign, notarize, and package arm64 app
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      ARCHITECTURE: arm64
+      CONFIGURATION: release
+      REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          gh --version
+          test "$(uname -m)" = "arm64"
+
+      - name: Resolve locked dependencies
+        run: swift package resolve --force-resolved-versions
+
+      - name: Run deterministic tests
+        run: >-
+          swift test
+          --skip 'live(PublicCollectorsReturnRealData|StorageCollectorMapsVolumeToPhysicalCounters|BatteryAndThermalCollectorsExposeAvailableHardware)'
+
+      - name: Apply release version
+        id: version
+        run: ./Scripts/ci/set-release-version.sh "$REQUESTED_VERSION" "$GITHUB_RUN_NUMBER"
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: ./Scripts/ci/import-codesign-certificate.sh
+
+      - name: Build and sign application bundle
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: ./Scripts/build-app.sh
+
+      - name: Inspect signed code
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/MacScope.app
+          codesign --display --verbose=4 dist/MacScope.app
+          codesign --display --verbose=4 dist/MacScope.app/Contents/Resources/MacScopeHelper
+          codesign --display --verbose=4 dist/MacScope.app/Contents/Resources/MacScopeMCPServer
+
+      - name: Notarize, staple, and archive application
+        env:
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: >-
+          ./Scripts/ci/notarize-app.sh
+          dist/MacScope.app
+          "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.zip"
+
+      - name: Upload notarized build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: MacScope-${{ steps.version.outputs.version }}-arm64
+          path: |
+            dist/MacScope-${{ steps.version.outputs.version }}-arm64.zip
+            dist/MacScope-${{ steps.version.outputs.version }}-arm64.zip.sha256
+            dist/notarization-result.json
+            dist/notarization-log.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload notarization diagnostics after failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: MacScope-notarization-diagnostics-${{ github.run_id }}
+          path: |
+            dist/notarization-result.json
+            dist/notarization-log.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish GitHub release for tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.zip"
+          checksum="$archive.sha256"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$archive" "$checksum" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$archive" "$checksum" \
+              --verify-tag \
+              --generate-notes \
+              --title "MacScope $MACSCOPE_RELEASE_VERSION"
+          fi
+
+      - name: Delete temporary signing keychain
+        if: always()
+        run: |
+          if [[ -n "${MACOS_CI_KEYCHAIN:-}" && -f "$MACOS_CI_KEYCHAIN" ]]; then
+            security delete-keychain "$MACOS_CI_KEYCHAIN"
+          fi

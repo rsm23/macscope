@@ -1,0 +1,13 @@
+.build/
+.swiftpm/
+dist/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.cer
+*.p12
+*.p8
+*.provisionprofile
+__pycache__/
+*.py[cod]

@@ -1,0 +1,73 @@
+name: Build MacScope
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macscope-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package arm64 app
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      ARCHITECTURE: arm64
+      CONFIGURATION: release
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          test "$(uname -m)" = "arm64"
+
+      - name: Resolve locked dependencies
+        run: swift package resolve --force-resolved-versions
+
+      - name: Run deterministic tests
+        run: >-
+          swift test
+          --skip 'live(PublicCollectorsReturnRealData|StorageCollectorMapsVolumeToPhysicalCounters|BatteryAndThermalCollectorsExposeAvailableHardware)'
+
+      - name: Build application bundle
+        run: ./Scripts/build-app.sh
+
+      - name: Verify bundle structure and signatures
+        run: |
+          test -x dist/MacScope.app/Contents/MacOS/MacScope
+          test -x dist/MacScope.app/Contents/Resources/MacScopeHelper
+          test -x dist/MacScope.app/Contents/Resources/MacScopeMCPServer
+          plutil -lint dist/MacScope.app/Contents/Info.plist
+          plutil -lint dist/MacScope.app/Contents/Library/LaunchDaemons/local.taskmanager.MacScope.Helper.plist
+          codesign --verify --deep --strict --verbose=2 dist/MacScope.app
+
+      - name: Smoke-test packaged MCP server
+        run: >-
+          python3 Scripts/test-mcp-server.py
+          --server dist/MacScope.app/Contents/Resources/MacScopeMCPServer
+
+      - name: Archive application
+        run: ./Scripts/ci/archive-app.sh dist/MacScope.app dist/MacScope-arm64.zip
+
+      - name: Upload application artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: MacScope-arm64-${{ github.sha }}
+          path: |
+            dist/MacScope-arm64.zip
+            dist/MacScope-arm64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -875,9 +875,14 @@ final class SnippetShelfService {
     private(set) var expansionError: String?
     private(set) var isInstallingDiskImage = false
     private let snippetsKey = "utility.savedSnippets"
+    private let finderDestinationProvider: @MainActor () -> URL?
     private var expansionEngine: TextExpansionEngine?
 
-    init() {
+    init(
+        finderDestinationProvider: @escaping @MainActor () -> URL?
+            = SnippetShelfService.currentFinderDestination
+    ) {
+        self.finderDestinationProvider = finderDestinationProvider
         load()
         if UserDefaults.standard.bool(forKey: "utility.textExpansionEnabled") {
             setExpansionEnabled(true, requestPermission: false)
@@ -980,24 +985,48 @@ final class SnippetShelfService {
         destinationFolder?.lastPathComponent ?? "Finder destination"
     }
 
-    func captureFrontmostFinderDestination() {
-        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder",
-              AXIsProcessTrusted(),
-              let finder = NSWorkspace.shared.frontmostApplication else { return }
+    @discardableResult
+    func captureFrontmostFinderDestination() -> URL? {
+        guard let url = finderDestinationProvider() else { return nil }
+        destinationFolder = url.standardizedFileURL
+        return destinationFolder
+    }
+
+    private static func currentFinderDestination() -> URL? {
+        guard AXIsProcessTrusted(),
+              let finder = NSRunningApplication.runningApplications(
+                  withBundleIdentifier: "com.apple.finder"
+              ).first else { return nil }
         let application = AXUIElementCreateApplication(finder.processIdentifier)
         var focusedValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let focusedWindowStatus = AXUIElementCopyAttributeValue(
             application,
             kAXFocusedWindowAttribute as CFString,
             &focusedValue
-        ) == .success, let focusedValue else { return }
+        )
+        if focusedWindowStatus != .success || focusedValue == nil {
+            var windowsValue: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                application,
+                kAXWindowsAttribute as CFString,
+                &windowsValue
+            ) == .success,
+               let windows = windowsValue as? [AXUIElement] {
+                focusedValue = windows.first
+            }
+        }
+        guard let focusedValue else {
+            return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+                ? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+                : nil
+        }
         let window = unsafeDowncast(focusedValue, to: AXUIElement.self)
         var documentValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             window,
             kAXDocumentAttribute as CFString,
             &documentValue
-        ) == .success, let documentValue else { return }
+        ) == .success, let documentValue else { return nil }
 
         let url: URL?
         if let value = documentValue as? URL {
@@ -1009,20 +1038,46 @@ final class SnippetShelfService {
         } else {
             url = nil
         }
-        guard let url, url.isFileURL else { return }
+        guard let url, url.isFileURL else { return nil }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-              isDirectory.boolValue else { return }
-        destinationFolder = url.standardizedFileURL
+              isDirectory.boolValue else { return nil }
+        return url.standardizedFileURL
     }
 
     func moveShelfItemsToCurrentFinderFolder() {
-        captureFrontmostFinderDestination()
-        guard let destinationFolder else {
-            statusMessage = "Open the destination folder in Finder, then click the shelf."
+        guard !shelfItems.isEmpty else {
+            statusMessage = "The shelf has no files or folders to move."
             return
         }
-        moveShelfItems(to: destinationFolder)
+        guard let destination = captureFrontmostFinderDestination() else {
+            chooseShelfDestinationAndMove()
+            return
+        }
+        moveShelfItems(to: destination)
+    }
+
+    func chooseShelfDestinationAndMove() {
+        guard !shelfItems.isEmpty else {
+            statusMessage = "The shelf has no files or folders to move."
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.title = "Move Shelf Items"
+        panel.message = "Choose the destination folder for \(shelfItems.count) parked item\(shelfItems.count == 1 ? "" : "s")."
+        panel.prompt = "Move Here"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = destinationFolder
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let destination = panel.url else {
+            statusMessage = "Move cancelled. Shelf items are still parked."
+            return
+        }
+        destinationFolder = destination.standardizedFileURL
+        moveShelfItems(to: destination)
     }
 
     func moveShelfItems(to destination: URL) {

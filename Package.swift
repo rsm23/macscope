@@ -27,7 +27,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacScope",
-            dependencies: ["MacScopeCore"],
+            dependencies: ["MacScopeCore", "MacScopeMCPBridge"],
             resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
@@ -41,6 +41,7 @@ let package = Package(
                 .linkedFramework("Charts"),
                 .linkedFramework("IOKit"),
                 .linkedFramework("ScreenCaptureKit"),
+                .linkedFramework("Security"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("UserNotifications"),
                 .linkedFramework("Vision")
@@ -62,7 +63,8 @@ let package = Package(
             dependencies: [
                 "MacScopeMCPBridge",
                 .product(name: "MCP", package: "swift-sdk")
-            ]
+            ],
+            linkerSettings: [.linkedFramework("AppKit")]
         ),
         .testTarget(name: "MacScopeCoreTests", dependencies: ["MacScopeCore"]),
         .testTarget(

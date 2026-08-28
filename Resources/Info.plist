@@ -30,6 +30,8 @@
   <string>MacScope uses the camera only for the local camera preview you open.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>MacScope uses the microphone only when you explicitly include it in a screen recording.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>MacScope uses Automation only for quick actions you explicitly run in Finder or System Events.</string>
   <key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

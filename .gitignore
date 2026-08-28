@@ -11,3 +11,4 @@ xcuserdata/
 *.provisionprofile
 __pycache__/
 *.py[cod]
+.env

@@ -327,6 +327,7 @@ struct MacScopeApp: App {
 
         Settings {
             SettingsView(model: model)
+                .equatable()
                 .preferredColorScheme(preferredColorScheme)
         }
     }

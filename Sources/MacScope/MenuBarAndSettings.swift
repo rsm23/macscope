@@ -4,7 +4,27 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SettingsView: View {
+private enum SettingsTab: String, CaseIterable, Identifiable {
+    case features = "Features"
+    case general = "General"
+    case privacy = "Privacy"
+    case alerts = "Alerts"
+    case permissions = "Permissions"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .features: "square.grid.3x3.fill"
+        case .general: "gear"
+        case .privacy: "hand.raised"
+        case .alerts: "bell.badge"
+        case .permissions: "lock.shield"
+        }
+    }
+}
+
+struct SettingsView: View, @preconcurrency Equatable {
     let model: AppModel
     @AppStorage("samplingProfile") private var samplingProfile = SamplingProfile.balanced.rawValue
     @AppStorage("processHistoryEnabled") private var processHistoryEnabled = false
@@ -33,17 +53,28 @@ struct SettingsView: View {
     @State private var confirmsSettingsImport = false
     @State private var shortcutRevision = 0
     @State private var radialMenuStatus: String?
+    @State private var selectedTab = SettingsTab.general
 
     private var helperService: SMAppService {
         .daemon(plistName: "local.taskmanager.MacScope.Helper.plist")
     }
 
-    var body: some View {
-        TabView {
-            FeatureHubSettingsView()
-                .tabItem { Label("Features", systemImage: "square.grid.3x3.fill") }
+    static func == (lhs: SettingsView, rhs: SettingsView) -> Bool {
+        lhs.model === rhs.model
+    }
 
-            SettingsPage(
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsTabBar(selection: $selectedTab)
+            Divider()
+
+            Group {
+                switch selectedTab {
+                case .features:
+                    FeatureHubSettingsView()
+
+                case .general:
+                    SettingsPage(
                 title: "Sampling",
                 subtitle: "Balance update frequency with battery and CPU impact.",
                 icon: "waveform.path.ecg"
@@ -375,14 +406,14 @@ struct SettingsView: View {
                         }
                     }
                 }
-            }
-            .tabItem { Label("General", systemImage: "gear") }
+                    }
 
-            SettingsPage(
-                title: "Privacy & data",
-                subtitle: "MacScope keeps telemetry local and gives you control over retained details.",
-                icon: "hand.raised.fill"
-            ) {
+                case .privacy:
+                    SettingsPage(
+                        title: "Privacy & data",
+                        subtitle: "MacScope keeps telemetry local and gives you control over retained details.",
+                        icon: "hand.raised.fill"
+                    ) {
                 SettingsSection(title: "Local history") {
                     VStack(alignment: .leading, spacing: 0) {
                         SettingsToggleRow(
@@ -414,17 +445,19 @@ struct SettingsView: View {
                             .foregroundStyle(MacScopeTheme.cyan)
                     }
                 }
-            }
-            .tabItem { Label("Privacy", systemImage: "hand.raised") }
+                    }
 
-            UsageAlertsSettingsView(model: model)
-                .tabItem { Label("Alerts", systemImage: "bell.badge") }
+                case .alerts:
+                    UsageAlertsSettingsView(model: model)
 
-            SettingsPage(
-                title: "Permissions & helper",
-                subtitle: "Manage privileged telemetry and expert system actions.",
-                icon: "lock.shield.fill"
-            ) {
+                case .permissions:
+                    SettingsPage(
+                        title: "Permissions & helper",
+                        subtitle: "Check every utility authorization and request access again when needed.",
+                        icon: "lock.shield.fill"
+                    ) {
+                PermissionChecklistView()
+
                 SettingsSection(title: "Advanced controls") {
                     SettingsToggleRow(
                         title: "Expert Mode",
@@ -532,8 +565,9 @@ struct SettingsView: View {
                         )
                     }
                 }
+                    }
+                }
             }
-            .tabItem { Label("Permissions", systemImage: "lock.shield") }
         }
         .frame(width: 700, height: 560)
         .task {
@@ -930,7 +964,7 @@ struct SettingsView: View {
         .disabled(!mcpServerIsBundled)
         .macScopeGlassButton(prominent: true)
 
-        Button("Copy Write-Enabled Config", systemImage: "switch.2") {
+        Button("Copy Full Utility Config", systemImage: "switch.2") {
             copyMCPConfiguration(featureWrites: true)
         }
         .disabled(!mcpServerIsBundled)
@@ -961,13 +995,15 @@ struct SettingsView: View {
     private func copyMCPConfiguration(featureWrites: Bool) {
         guard let mcpServerURL, mcpServerIsBundled else { return }
         var server: [String: Any] = ["command": mcpServerURL.path]
-        server["args"] = featureWrites ? ["--allow-feature-writes"] : []
+        server["args"] = featureWrites
+            ? ["--allow-feature-writes", "--allow-utility-writes", "--allow-artifact-read", "--allow-sensitive-read"]
+            : []
         let document: [String: Any] = ["mcpServers": ["macscope": server]]
         guard let data = try? JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        mcpConfigurationStatus = featureWrites ? "Write config copied" : "Read-only config copied"
+        mcpConfigurationStatus = featureWrites ? "Full utility config copied" : "Read-only config copied"
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
             mcpConfigurationStatus = nil
@@ -993,6 +1029,143 @@ struct SettingsView: View {
         } catch {
             mcpConnections = []
             mcpConnectionError = error.localizedDescription
+        }
+    }
+}
+
+private struct PermissionChecklistView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var center = PermissionCenter()
+
+    var body: some View {
+        SettingsSection(title: "Utility authorizations") {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(center.allowedCount) of \(center.permissions.count) allowed")
+                            .font(.headline)
+                        Text(summaryDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(center.isRefreshing ? "Checking…" : "Check All", systemImage: "arrow.clockwise") {
+                        Task { await center.refresh() }
+                    }
+                    .disabled(center.isRefreshing)
+                    .macScopeGlassButton(prominent: center.allowedCount != center.permissions.count)
+                }
+                .padding(.bottom, 12)
+
+                if let warning = center.buildIdentityWarning {
+                    Label(warning, systemImage: "signature")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.bottom, 12)
+                }
+
+                SettingsDivider()
+
+                ForEach(Array(center.permissions.enumerated()), id: \.element.id) { index, permission in
+                    PermissionStatusRow(
+                        permission: permission,
+                        isRequesting: center.isRequesting(permission.id),
+                        action: { Task { await center.request(permission.id) } }
+                    )
+                    if index < center.permissions.count - 1 { SettingsDivider() }
+                }
+
+                if let message = center.message {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(.top, 12)
+                }
+            }
+        }
+        .task { await center.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await center.refresh() }
+        }
+    }
+
+    private var summaryDetail: String {
+        guard let checked = center.lastCheckedAt else {
+            return "Reading permission status from the currently running MacScope build."
+        }
+        return "Current executable checked \(checked.formatted(date: .omitted, time: .standard)). Return from System Settings to refresh automatically."
+    }
+}
+
+private struct PermissionStatusRow: View {
+    let permission: MacScopePermissionItem
+    let isRequesting: Bool
+    let action: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { content; controls }
+            VStack(alignment: .leading, spacing: 10) { content; controls }
+        }
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            Image(systemName: permission.icon)
+                .font(.body.weight(.medium))
+                .foregroundStyle(statusColor)
+                .frame(width: 34, height: 34)
+                .background(statusColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(permission.title)
+                    .font(.callout.weight(.medium))
+                Text(permission.status.note ?? permission.utilitySummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Label(permission.status.title, systemImage: statusIcon)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(statusColor.opacity(0.1), in: Capsule())
+            Button(isRequesting ? "Requesting…" : permission.status.actionLabel, action: action)
+                .disabled(isRequesting || permission.status == .checking)
+                .macScopeGlassButton(
+                    prominent: permission.status == .notDetermined || permission.status == .notAllowed
+                )
+        }
+        .fixedSize()
+    }
+
+    private var statusColor: Color {
+        switch permission.status {
+        case .allowed: .green
+        case .denied, .restricted: .red
+        case .notAllowed, .notDetermined, .needsReview: .orange
+        case .checking: .secondary
+        }
+    }
+
+    private var statusIcon: String {
+        switch permission.status {
+        case .allowed: "checkmark.circle.fill"
+        case .denied: "xmark.circle.fill"
+        case .restricted: "hand.raised.slash.fill"
+        case .notAllowed: "exclamationmark.circle.fill"
+        case .notDetermined: "questionmark.circle.fill"
+        case .needsReview: "exclamationmark.circle.fill"
+        case .checking: "clock"
         }
     }
 }
@@ -1112,6 +1285,8 @@ private struct MCPConnectionRow: View {
             policies.append("Feature controls")
         }
         if session.policy.sensitiveReads { policies.append("Sensitive reads") }
+        if session.policy.utilityWrites { policies.append("Utilities") }
+        if session.policy.artifactReads { policies.append("Artifacts") }
         return policies.isEmpty ? "Read only" : policies.joined(separator: " · ")
     }
 
@@ -1122,6 +1297,42 @@ private struct MCPConnectionRow: View {
         let minutes = seconds / 60
         if minutes < 60 { return "\(minutes)m ago" }
         return "\(minutes / 60)h ago"
+    }
+}
+
+private struct SettingsTabBar: View {
+    @Binding var selection: SettingsTab
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(SettingsTab.allCases) { tab in
+                Button {
+                    selection = tab
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 16, weight: .medium))
+                        Text(tab.rawValue)
+                            .font(.caption2.weight(.medium))
+                    }
+                    .foregroundStyle(selection == tab ? MacScopeTheme.accent : Color.secondary)
+                    .frame(minWidth: 62, minHeight: 42)
+                    .padding(.horizontal, 4)
+                    .background(
+                        selection == tab ? MacScopeTheme.accent.opacity(0.12) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab.rawValue)
+                .accessibilityAddTraits(selection == tab ? .isSelected : [])
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
     }
 }
 

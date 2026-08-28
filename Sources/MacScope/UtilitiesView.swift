@@ -36,24 +36,24 @@ struct UtilitiesView: View {
     let maintenance: MaintenanceUtilityService
     let screenshots: ScreenshotService
     let keepAwake: KeepAwakeService
+    let screenOCR: ScreenOCRService
+    let colorPicker: ColorPickerService
+    let screenRecorder: ScreenRecordingService
+    let cameraPreview: CameraPreviewService
+    let keyboardDebounce: KeyboardDebounceService
+    let scrollDirection: ScrollDirectionService
+    let mouseSideButtons: MouseSideButtonService
+    let focusFollowsMouse: FocusFollowsMouseService
+    let superKey: SuperKeyService
+    let smoothScrolling: SmoothScrollingService
+    let plainTextPaste: PlainTextPasteService
+    let finderShortcuts: FinderShortcutService
+    let scratchpad: ScratchpadService
+    let media: MediaUtilityService
+    let displayControl: DisplayControlService
+    let cleaningMode: CleaningModeService
     @Binding var selectedTab: UtilityTab
     @AppStorage(UtilityFeatureStore.disabledKey) private var disabledModules = ""
-    @State private var screenOCR = ScreenOCRService()
-    @State private var colorPicker = ColorPickerService()
-    @State private var screenRecorder = ScreenRecordingService()
-    @State private var cameraPreview = CameraPreviewService()
-    @State private var keyboardDebounce = KeyboardDebounceService()
-    @State private var scrollDirection = ScrollDirectionService()
-    @State private var mouseSideButtons = MouseSideButtonService()
-    @State private var focusFollowsMouse = FocusFollowsMouseService()
-    @State private var superKey = SuperKeyService()
-    @State private var smoothScrolling = SmoothScrollingService()
-    @State private var plainTextPaste = PlainTextPasteService()
-    @State private var finderShortcuts = FinderShortcutService()
-    @State private var scratchpad = ScratchpadService()
-    @State private var media = MediaUtilityService()
-    @State private var displayControl = DisplayControlService()
-    @State private var cleaningMode = CleaningModeService()
 
     var body: some View {
         ZStack {
@@ -2026,6 +2026,12 @@ private struct ClipboardUtilityView: View {
                     .macScopeGlassButton()
                     Button("Add Files…", systemImage: "plus") { snippetShelf.addShelfItems() }
                         .macScopeGlassButton(prominent: true)
+                    if !snippetShelf.shelfItems.isEmpty {
+                        Button("Move Items…", systemImage: "arrow.right.circle.fill") {
+                            snippetShelf.moveShelfItemsToCurrentFinderFolder()
+                        }
+                        .macScopeGlassButton(prominent: true)
+                    }
                 }
                 if snippetShelf.shelfItems.isEmpty && snippetShelf.shelfTextItems.isEmpty {
                     UtilityNotice(

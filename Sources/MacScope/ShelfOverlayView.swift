@@ -39,7 +39,7 @@ struct ShelfOverlayView: View {
                         service.moveShelfItemsToCurrentFinderFolder()
                     }
                     .macScopeGlassButton(prominent: true)
-                    .help("Move shelf files to \(service.destinationDisplayName)")
+                    .help("Move shelf files to \(service.destinationDisplayName); choose a folder if Finder cannot be read")
                 }
                 Button { dismissWindow(id: "session-shelf") } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
@@ -143,8 +143,7 @@ struct ShelfDropZoneView: View {
                 }
             } else {
                 Button {
-                    service.moveShelfItemsToCurrentFinderFolder()
-                    if service.shelfItems.isEmpty { dismissWindow(id: "shelf-drop-zone") }
+                    moveParkedItems()
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Move \(service.shelfItems.count) item\(service.shelfItems.count == 1 ? "" : "s") here")
@@ -165,6 +164,11 @@ struct ShelfDropZoneView: View {
                     .font(.caption.weight(.bold).monospacedDigit())
                     .frame(minWidth: 24, minHeight: 24)
                     .background(Color.primary.opacity(0.08), in: Capsule())
+                Button("Move", systemImage: "arrow.right.circle.fill") {
+                    moveParkedItems()
+                }
+                .macScopeGlassButton(prominent: true)
+                .help("Move to the current Finder folder; choose a destination if Finder cannot be read")
                 Button {
                     openWindow(id: "session-shelf")
                     NSApp.activate(ignoringOtherApps: true)
@@ -191,6 +195,11 @@ struct ShelfDropZoneView: View {
         }
         .shadow(color: .black.opacity(0.24), radius: 20, y: 8)
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func moveParkedItems() {
+        service.moveShelfItemsToCurrentFinderFolder()
+        if service.shelfItems.isEmpty { dismissWindow(id: "shelf-drop-zone") }
     }
 }
 

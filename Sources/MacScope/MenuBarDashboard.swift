@@ -7,31 +7,274 @@ struct MenuBarStatusLabel: View {
     let presentation: MenuBarPresentation
     @AppStorage("menuBarReadoutMetrics") private var storedMetrics = MenuBarReadoutMetric.cpu.rawValue
     @AppStorage("menuBarReadoutStyle") private var storedStyle = MenuBarReadoutStyle.values.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var metrics: [MenuBarReadoutMetric] {
         MenuBarReadoutMetric.selected(from: storedMetrics)
     }
 
+    private var fractions: [Double?] {
+        metrics.map { $0.fraction(presentation) }
+    }
+
+    @ViewBuilder
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "waveform.path.ecg")
-            if (MenuBarReadoutStyle(rawValue: storedStyle) ?? .values) == .bars {
-                ForEach(metrics) { metric in
-                    if let fraction = metric.fraction(presentation) {
-                        VStack(spacing: 1) {
-                            Text(metric.shortName).font(.system(size: 8, weight: .semibold))
-                            ProgressView(value: fraction).frame(width: 24)
-                        }
-                    } else {
-                        Text(metric.value(presentation)).monospacedDigit()
-                    }
-                }
-            } else {
+        if (MenuBarReadoutStyle(rawValue: storedStyle) ?? .values) == .bars {
+            MenuBarGraphStatusArtwork(metrics: metrics, presentation: presentation)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.72),
+                    value: fractions
+                )
+                .fixedSize(horizontal: true, vertical: true)
+                .accessibilityLabel(
+                    "MacScope, \(metrics.map { $0.accessibilityValue(presentation) }.joined(separator: ", "))"
+                )
+        } else {
+            HStack(spacing: 5) {
+                Image(systemName: "waveform.path.ecg")
                 Text(metrics.map { $0.value(presentation) }.joined(separator: " · "))
                     .monospacedDigit()
             }
+            .fixedSize(horizontal: true, vertical: true)
+            .accessibilityLabel(
+                "MacScope, \(metrics.map { $0.accessibilityValue(presentation) }.joined(separator: ", "))"
+            )
         }
-        .accessibilityLabel("MacScope, \(metrics.map { $0.accessibilityValue(presentation) }.joined(separator: ", "))")
+    }
+}
+
+enum MenuBarUsageGauge {
+    static let segmentCount = 7
+
+    static func activeSegmentCount(for fraction: Double) -> Int {
+        let clamped = min(max(fraction, 0), 1)
+        return Int((clamped * Double(segmentCount)).rounded())
+    }
+
+    static func displayText(label: String, fraction: Double) -> String {
+        let clamped = min(max(fraction, 0), 1)
+        return "\(label) \(Int((clamped * 100).rounded()))%"
+    }
+}
+
+enum MenuBarNetworkGraph {
+    static let width: CGFloat = 46
+    static let maximumSampleCount = 24
+
+    static func normalizedSamples(_ values: [Double]) -> [Double] {
+        let samples = values.suffix(maximumSampleCount).map { value in
+            value.isFinite ? max(value, 0) : 0
+        }
+        guard let peak = samples.max(), peak > 0 else {
+            return Array(repeating: 0, count: samples.count)
+        }
+        return samples.map { min(max(sqrt($0 / peak), 0), 1) }
+    }
+}
+
+private struct MenuBarGraphStatusArtwork: View {
+    let metrics: [MenuBarReadoutMetric]
+    let presentation: MenuBarPresentation
+
+    var body: some View {
+        Image(nsImage: artwork)
+            .interpolation(.high)
+            .contentTransition(.interpolate)
+            .fixedSize()
+    }
+
+    @MainActor private var artwork: NSImage {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let barWidth: CGFloat = 3.5
+        let barSpacing: CGFloat = 1.5
+        let barGroupWidth = (barWidth * CGFloat(MenuBarUsageGauge.segmentCount))
+            + (barSpacing * CGFloat(MenuBarUsageGauge.segmentCount - 1))
+        let entries = metrics.map { metric -> (metric: MenuBarReadoutMetric, text: String, fraction: Double?) in
+            guard metric.fraction(presentation) != nil else {
+                return (metric, metric.value(presentation), nil)
+            }
+            let fraction = currentFraction(for: metric)
+            return (metric, MenuBarUsageGauge.displayText(label: metric.shortName, fraction: fraction), fraction)
+        }
+        let textSizes = entries.map { $0.text.size(withAttributes: attributes) }
+        let entriesWidth = zip(entries, textSizes).reduce(CGFloat.zero) { total, pair in
+            let graphWidth: CGFloat
+            if pair.0.metric == .network {
+                graphWidth = 5 + MenuBarNetworkGraph.width
+            } else if pair.0.fraction != nil {
+                graphWidth = 5 + barGroupWidth
+            } else {
+                graphWidth = 0
+            }
+            return total + ceil(pair.1.width) + graphWidth
+        }
+        let interEntrySpacing = CGFloat(max(entries.count - 1, 0)) * 7
+        let imageSize = NSSize(
+            width: 16 + 5 + entriesWidth + interEntrySpacing,
+            height: 16
+        )
+
+        let image = NSImage(size: imageSize, flipped: false) { _ in
+            let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor]))
+            let waveform = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: nil)?
+                .withSymbolConfiguration(symbolConfiguration)
+            waveform?.draw(in: NSRect(x: 0, y: 1, width: 16, height: 14))
+
+            let gradient = NSGradient(colors: [
+                NSColor(deviceRed: 0.18, green: 0.78, blue: 0.92, alpha: 1),
+                NSColor(deviceRed: 0.12, green: 0.58, blue: 0.95, alpha: 1),
+                NSColor(deviceRed: 0.95, green: 0.38, blue: 0.93, alpha: 1),
+            ])
+            var x: CGFloat = 21
+
+            for (entry, textSize) in zip(entries, textSizes) {
+                entry.text.draw(
+                    at: NSPoint(x: x, y: (imageSize.height - textSize.height) / 2),
+                    withAttributes: attributes
+                )
+                x += ceil(textSize.width)
+
+                if entry.metric == .network {
+                    x += 5
+                    drawNetworkGraph(
+                        in: NSRect(x: x, y: 1, width: MenuBarNetworkGraph.width, height: 14)
+                    )
+                    x += MenuBarNetworkGraph.width
+                } else if let fraction = entry.fraction {
+                    x += 5
+                    let level = min(max(fraction, 0), 1) * Double(MenuBarUsageGauge.segmentCount)
+                    for index in 0..<MenuBarUsageGauge.segmentCount {
+                        let rect = NSRect(
+                            x: x + (CGFloat(index) * (barWidth + barSpacing)),
+                            y: 1,
+                            width: barWidth,
+                            height: 14
+                        )
+                        let path = NSBezierPath(
+                            roundedRect: rect,
+                            xRadius: barWidth / 2,
+                            yRadius: barWidth / 2
+                        )
+                        NSColor.labelColor.withAlphaComponent(0.16).setFill()
+                        path.fill()
+
+                        let activation = min(max(level - Double(index), 0), 1)
+                        guard activation > 0, let gradient else { continue }
+                        NSGraphicsContext.saveGraphicsState()
+                        path.addClip()
+                        NSGraphicsContext.current?.cgContext.setAlpha(activation)
+                        gradient.draw(in: rect, angle: 90)
+                        NSGraphicsContext.restoreGraphicsState()
+                    }
+                    x += barGroupWidth
+                }
+                x += 7
+            }
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private func currentFraction(for metric: MenuBarReadoutMetric) -> Double {
+        metric.fraction(presentation) ?? 0
+    }
+
+    @MainActor private func drawNetworkGraph(in rect: NSRect) {
+        let background = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+        NSColor.labelColor.withAlphaComponent(0.08).setFill()
+        background.fill()
+        NSColor.labelColor.withAlphaComponent(0.1).setStroke()
+        background.lineWidth = 0.5
+        background.stroke()
+
+        let baselineY = rect.midY
+        let baseline = NSBezierPath()
+        baseline.move(to: NSPoint(x: rect.minX + 2, y: baselineY))
+        baseline.line(to: NSPoint(x: rect.maxX - 2, y: baselineY))
+        NSColor.labelColor.withAlphaComponent(0.16).setStroke()
+        baseline.lineWidth = 0.5
+        baseline.stroke()
+
+        let download = networkSamples(
+            trend: presentation.downloadTrend,
+            currentBytesPerSecond: presentation.downloadRate
+        )
+        let upload = networkSamples(
+            trend: presentation.uploadTrend,
+            currentBytesPerSecond: presentation.uploadRate
+        )
+        drawNetworkSeries(
+            MenuBarNetworkGraph.normalizedSamples(download),
+            in: rect,
+            baselineY: baselineY,
+            direction: 1,
+            color: NSColor(deviceRed: 0.10, green: 0.76, blue: 1.0, alpha: 1)
+        )
+        drawNetworkSeries(
+            MenuBarNetworkGraph.normalizedSamples(upload),
+            in: rect,
+            baselineY: baselineY,
+            direction: -1,
+            color: NSColor(deviceRed: 0.96, green: 0.32, blue: 0.86, alpha: 1)
+        )
+    }
+
+    private func networkSamples(trend: [MetricPoint], currentBytesPerSecond: Double) -> [Double] {
+        var samples = trend.compactMap(\.value)
+        let currentMiBPerSecond = max(currentBytesPerSecond, 0) / 1_048_576
+        if samples.isEmpty {
+            samples = [currentMiBPerSecond, currentMiBPerSecond]
+        } else {
+            samples.append(currentMiBPerSecond)
+        }
+        return samples
+    }
+
+    @MainActor private func drawNetworkSeries(
+        _ samples: [Double],
+        in rect: NSRect,
+        baselineY: CGFloat,
+        direction: CGFloat,
+        color: NSColor
+    ) {
+        guard !samples.isEmpty else { return }
+        let values = samples.count == 1 ? [samples[0], samples[0]] : samples
+        let horizontalInset: CGFloat = 2
+        let amplitude = (rect.height / 2) - 2
+        let step = (rect.width - (horizontalInset * 2)) / CGFloat(values.count - 1)
+        let points = values.enumerated().map { index, value in
+            NSPoint(
+                x: rect.minX + horizontalInset + (CGFloat(index) * step),
+                y: baselineY + (direction * CGFloat(value) * amplitude)
+            )
+        }
+
+        let line = NSBezierPath()
+        line.move(to: points[0])
+        for point in points.dropFirst() { line.line(to: point) }
+        line.lineJoinStyle = .round
+        line.lineCapStyle = .round
+
+        let fill = NSBezierPath()
+        fill.append(line)
+        fill.line(to: NSPoint(x: points.last!.x, y: baselineY))
+        fill.line(to: NSPoint(x: points[0].x, y: baselineY))
+        fill.close()
+        color.withAlphaComponent(0.18).setFill()
+        fill.fill()
+
+        color.withAlphaComponent(0.28).setStroke()
+        line.lineWidth = 3
+        line.stroke()
+        color.setStroke()
+        line.lineWidth = 1.15
+        line.stroke()
     }
 }
 

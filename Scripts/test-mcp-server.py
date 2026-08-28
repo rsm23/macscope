@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import selectors
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -89,12 +91,15 @@ def main() -> int:
         default=Path(".build/debug/MacScopeMCPServer"),
         help="Path to the MacScopeMCPServer executable",
     )
+    parser.add_argument("--server-arg", action="append", default=[], help="Argument passed to the MCP server process")
+    parser.add_argument("--live-utilities", action="store_true", help="Exercise the bundled server against a running matching MacScope.app")
+    parser.add_argument("--capture-test-artifact", action="store_true", help="Create a full-screen capture through MCP and verify its PNG bytes")
     args = parser.parse_args()
     server_path = args.server.resolve()
     if not server_path.is_file():
         raise SystemExit(f"Server executable not found: {server_path}")
 
-    process = MCPProcess([str(server_path)])
+    process = MCPProcess([str(server_path), *args.server_arg])
     session_path: Path | None = None
     try:
         initialized = process.request(
@@ -125,11 +130,14 @@ def main() -> int:
         session_path, registered_session = registered_sessions[0]
         assert registered_session["clientName"] == "MacScope protocol test"
         assert registered_session["clientVersion"] == "1.0.0"
-        assert registered_session["policy"] == {
-            "experimentalFeatureWrites": False,
-            "featureWrites": False,
-            "sensitiveReads": False,
+        expected_policy = {
+            "artifactReads": "--allow-artifact-read" in args.server_arg,
+            "experimentalFeatureWrites": "--allow-experimental-feature-writes" in args.server_arg,
+            "featureWrites": "--allow-feature-writes" in args.server_arg or "--allow-experimental-feature-writes" in args.server_arg,
+            "sensitiveReads": "--allow-sensitive-read" in args.server_arg,
+            "utilityWrites": "--allow-utility-writes" in args.server_arg,
         }
+        assert registered_session["policy"] == expected_policy
 
         tools = process.request("tools/list", {})["tools"]
         names = {tool["name"] for tool in tools}
@@ -142,6 +150,11 @@ def main() -> int:
             "macscope_prepare_macos_feature_change",
             "macscope_apply_macos_feature_change",
             "macscope_undo_macos_feature_change",
+            "macscope_list_utilities",
+            "macscope_get_utility_state",
+            "macscope_run_utility",
+            "macscope_list_artifacts",
+            "macscope_read_artifact",
         }
         assert names == expected_tools
         assert all(tool["inputSchema"]["type"] == "object" for tool in tools)
@@ -153,12 +166,17 @@ def main() -> int:
             "macscope://telemetry/snapshot",
             "macscope://hardware/inventory",
             "macscope://macos/features",
+            "macscope://utilities/catalog",
+            "macscope://artifacts",
         }
 
         info = tool_call(process, "macscope_get_server_info", {})
         assert info["isError"] is False
-        assert info["structuredContent"]["featureWritesEnabled"] is False
-        assert info["structuredContent"]["sensitiveReadsEnabled"] is False
+        assert info["structuredContent"]["featureWritesEnabled"] is expected_policy["featureWrites"]
+        assert info["structuredContent"]["sensitiveReadsEnabled"] is expected_policy["sensitiveReads"]
+        assert info["structuredContent"]["utilityWritesEnabled"] is expected_policy["utilityWrites"]
+        assert info["structuredContent"]["artifactReadsEnabled"] is expected_policy["artifactReads"]
+        assert info["structuredContent"]["utilityActionCount"] >= 75
 
         snapshot = tool_call(
             process,
@@ -172,13 +190,14 @@ def main() -> int:
         assert structured["data"]["cpu"]["cores"]
         assert "availability" in structured["data"]["thermals"]
 
-        denied = tool_call(
-            process,
-            "macscope_get_system_snapshot",
-            {"sections": ["all"], "include_sensitive": True},
-        )
-        assert denied["isError"] is True
-        assert "--allow-sensitive-read" in denied["content"][0]["text"]
+        if not expected_policy["sensitiveReads"]:
+            denied = tool_call(
+                process,
+                "macscope_get_system_snapshot",
+                {"sections": ["all"], "include_sensitive": True},
+            )
+            assert denied["isError"] is True
+            assert "--allow-sensitive-read" in denied["content"][0]["text"]
 
         feature_list = tool_call(process, "macscope_list_macos_features", {"limit": 5})
         assert feature_list["isError"] is False
@@ -191,9 +210,74 @@ def main() -> int:
         resource_json = json.loads(feature_resource["contents"][0]["text"])
         assert resource_json["total"] >= 100
 
+        utilities = tool_call(process, "macscope_list_utilities", {})
+        assert utilities["isError"] is False
+        assert utilities["structuredContent"]["count"] >= 75
+        assert {item["module"] for item in utilities["structuredContent"]["actions"]} == {
+            "sound", "capture", "windows", "clipboard", "notes", "maintenance", "power"
+        }
+        assert any(item["id"] == "capture.screenshot" for item in utilities["structuredContent"]["actions"])
+        assert any(item["id"] == "capture.recording-start" for item in utilities["structuredContent"]["actions"])
+
+        if not expected_policy["utilityWrites"]:
+            utility_denied = tool_call(process, "macscope_run_utility", {"action_id": "sound.refresh"})
+            assert utility_denied["isError"] is True
+            assert "--allow-utility-writes" in utility_denied["content"][0]["text"]
+
+        artifacts = tool_call(process, "macscope_list_artifacts", {"limit": 1})
+        assert artifacts["isError"] is False
+        if not expected_policy["artifactReads"]:
+            artifact_denied = tool_call(process, "macscope_read_artifact", {"id": "missing"})
+            assert artifact_denied["isError"] is True
+            assert "--allow-artifact-read" in artifact_denied["content"][0]["text"]
+
+        if args.live_utilities:
+            assert expected_policy["utilityWrites"]
+            sound = tool_call(process, "macscope_get_utility_state", {"module": "sound"})
+            assert sound["isError"] is False
+            assert "applications" in sound["structuredContent"]["state"]
+            refresh = tool_call(process, "macscope_run_utility", {"action_id": "sound.refresh"})
+            assert refresh["isError"] is False
+            assert refresh["structuredContent"]["accepted"] is True
+            if expected_policy["sensitiveReads"]:
+                notes = tool_call(process, "macscope_get_utility_state", {"module": "notes", "include_sensitive": True})
+                assert notes["isError"] is False
+                assert "pads" in notes["structuredContent"]["state"]
+            if expected_policy["artifactReads"] and artifacts["structuredContent"]["artifacts"]:
+                artifact_id = artifacts["structuredContent"]["artifacts"][0]["id"]
+                chunk = tool_call(process, "macscope_read_artifact", {"id": artifact_id, "length": 64})
+                assert chunk["isError"] is False
+                assert chunk["structuredContent"]["chunk"]["byteCount"] > 0
+
+        if args.capture_test_artifact:
+            assert args.live_utilities and expected_policy["utilityWrites"] and expected_policy["artifactReads"]
+            before = tool_call(process, "macscope_list_artifacts", {"kind": "screenshot", "limit": 100})
+            before_ids = {item["id"] for item in before["structuredContent"]["artifacts"]}
+            capture = tool_call(
+                process,
+                "macscope_run_utility",
+                {"action_id": "capture.screenshot", "arguments": {"mode": "full_screen", "copy_to_clipboard": False}},
+            )
+            assert capture["isError"] is False
+            created = None
+            for _ in range(40):
+                time.sleep(0.25)
+                current = tool_call(process, "macscope_list_artifacts", {"kind": "screenshot", "limit": 100})
+                created = next((item for item in current["structuredContent"]["artifacts"] if item["id"] not in before_ids), None)
+                if created is not None:
+                    break
+            if created is None:
+                state = tool_call(process, "macscope_get_utility_state", {"module": "capture"})
+                screenshot_state = state.get("structuredContent", {}).get("state", {}).get("screenshot", {})
+                raise AssertionError(f"MCP screenshot did not produce an artifact: {screenshot_state}")
+            chunk = tool_call(process, "macscope_read_artifact", {"id": created["id"], "length": 64})
+            assert chunk["isError"] is False
+            raw = base64.b64decode(chunk["structuredContent"]["chunk"]["base64"])
+            assert raw.startswith(b"\x89PNG\r\n\x1a\n")
+
         print(
             f"MacScope MCP smoke test passed: {len(tools)} tools, "
-            f"{len(resources)} resources, live connection registry, telemetry, redaction, and feature state."
+            f"{len(resources)} resources, live connection registry, telemetry, utility catalog, artifact policy, redaction, and feature state."
         )
         return 0
     finally:

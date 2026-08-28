@@ -65,6 +65,8 @@ public struct MacScopeMCPConfiguration: Codable, Hashable, Sendable {
     public var allowSensitiveReads: Bool
     public var allowFeatureWrites: Bool
     public var allowExperimentalFeatureWrites: Bool
+    public var allowUtilityWrites: Bool
+    public var allowArtifactReads: Bool
     public var approvalLifetimeSeconds: TimeInterval
     public var undoLifetimeSeconds: TimeInterval
 
@@ -72,12 +74,16 @@ public struct MacScopeMCPConfiguration: Codable, Hashable, Sendable {
         allowSensitiveReads: Bool = false,
         allowFeatureWrites: Bool = false,
         allowExperimentalFeatureWrites: Bool = false,
+        allowUtilityWrites: Bool = false,
+        allowArtifactReads: Bool = false,
         approvalLifetimeSeconds: TimeInterval = 120,
         undoLifetimeSeconds: TimeInterval = 600
     ) {
         self.allowSensitiveReads = allowSensitiveReads
         self.allowFeatureWrites = allowFeatureWrites
         self.allowExperimentalFeatureWrites = allowExperimentalFeatureWrites
+        self.allowUtilityWrites = allowUtilityWrites
+        self.allowArtifactReads = allowArtifactReads
         self.approvalLifetimeSeconds = min(max(approvalLifetimeSeconds, 15), 600)
         self.undoLifetimeSeconds = min(max(undoLifetimeSeconds, 60), 3_600)
     }
@@ -92,6 +98,35 @@ public protocol MacScopeMCPFeatureAccess: Sendable {
     func refresh() async -> [MacOSFeatureStatus]
     func setEnabled(_ enabled: Bool, descriptorID: String) async throws -> MacOSFeatureChange
     func restore(_ change: MacOSFeatureChange) async throws
+}
+
+public protocol MacScopeMCPUtilityAccess: Sendable {
+    func state(
+        module: MacScopeMCPUtilityModule,
+        includeSensitive: Bool
+    ) async throws -> MacScopeMCPJSONValue
+    func run(
+        actionID: String,
+        arguments: [String: MacScopeMCPJSONValue]
+    ) async throws -> MacScopeMCPJSONValue
+}
+
+public struct UnavailableMacScopeMCPUtilityAccess: MacScopeMCPUtilityAccess {
+    public init() {}
+
+    public func state(
+        module: MacScopeMCPUtilityModule,
+        includeSensitive: Bool
+    ) async throws -> MacScopeMCPJSONValue {
+        throw MacScopeMCPError.utilityAppUnavailable
+    }
+
+    public func run(
+        actionID: String,
+        arguments: [String: MacScopeMCPJSONValue]
+    ) async throws -> MacScopeMCPJSONValue {
+        throw MacScopeMCPError.utilityAppUnavailable
+    }
 }
 
 extension MacOSFeatureManager: MacScopeMCPFeatureAccess {}
@@ -110,6 +145,12 @@ public enum MacScopeMCPError: LocalizedError, Sendable {
     case staleUndo
     case invalidConfirmation(expected: String)
     case expiredOrUnknownUndo
+    case utilityWritesDisabled
+    case artifactReadsDisabled
+    case unknownUtilityAction(String)
+    case utilityAppUnavailable
+    case utilityRequestFailed(String)
+    case unknownArtifact(String)
 
     public var errorDescription: String? {
         switch self {
@@ -126,6 +167,12 @@ public enum MacScopeMCPError: LocalizedError, Sendable {
         case .staleUndo: "The feature changed after the MCP operation. Refusing to overwrite the newer value."
         case .invalidConfirmation(let expected): "Confirmation did not match. Use exactly: \(expected)"
         case .expiredOrUnknownUndo: "The undo token is unknown, expired, or already used."
+        case .utilityWritesDisabled: "Utility execution is disabled. Start the server with --allow-utility-writes."
+        case .artifactReadsDisabled: "Screenshot and recording bytes are disabled. Start the server with --allow-artifact-read."
+        case .unknownUtilityAction(let id): "Unknown utility action identifier: \(id)."
+        case .utilityAppUnavailable: "The running MacScope app did not answer the utility request. Launch the matching MacScope.app bundle and try again."
+        case .utilityRequestFailed(let detail): detail
+        case .unknownArtifact(let id): "Unknown or no-longer-available artifact identifier: \(id)."
         }
     }
 }
@@ -151,6 +198,7 @@ public actor MacScopeMCPGateway {
 
     private let snapshotSource: any MacScopeMCPSnapshotSource
     private let featureAccess: any MacScopeMCPFeatureAccess
+    private let utilityAccess: any MacScopeMCPUtilityAccess
     public let configuration: MacScopeMCPConfiguration
     private var approvals: [String: PendingApproval] = [:]
     private var undos: [String: PendingUndo] = [:]
@@ -158,10 +206,12 @@ public actor MacScopeMCPGateway {
     public init(
         snapshotSource: any MacScopeMCPSnapshotSource,
         featureAccess: any MacScopeMCPFeatureAccess,
+        utilityAccess: any MacScopeMCPUtilityAccess = UnavailableMacScopeMCPUtilityAccess(),
         configuration: MacScopeMCPConfiguration = .init()
     ) {
         self.snapshotSource = snapshotSource
         self.featureAccess = featureAccess
+        self.utilityAccess = utilityAccess
         self.configuration = configuration
     }
 
@@ -173,6 +223,10 @@ public actor MacScopeMCPGateway {
             "sensitiveReadsEnabled": .bool(configuration.allowSensitiveReads),
             "featureWritesEnabled": .bool(configuration.allowFeatureWrites),
             "experimentalFeatureWritesEnabled": .bool(configuration.allowExperimentalFeatureWrites),
+            "utilityWritesEnabled": .bool(configuration.allowUtilityWrites),
+            "artifactReadsEnabled": .bool(configuration.allowArtifactReads),
+            "utilityModules": .array(MacScopeMCPUtilityModule.allCases.map { .string($0.rawValue) }),
+            "utilityActionCount": .integer(Int64(MacScopeMCPUtilityCatalog.actions.count)),
             "snapshotSections": .array(MacScopeMCPSnapshotSection.allCases.map { .string($0.rawValue) })
         ])
     }
@@ -344,6 +398,77 @@ public actor MacScopeMCPGateway {
             "restored": .bool(true),
             "featureTitle": .string(pending.featureTitle),
             "feature": try .encode(restored)
+        ])
+    }
+
+    public func listUtilities(module: MacScopeMCPUtilityModule? = nil) throws -> MacScopeMCPJSONValue {
+        let actions = MacScopeMCPUtilityCatalog.actions.filter { module == nil || $0.module == module }
+        return try document([
+            "schemaVersion": .integer(Int64(Self.schemaVersion)),
+            "utilityWritesEnabled": .bool(configuration.allowUtilityWrites),
+            "artifactReadsEnabled": .bool(configuration.allowArtifactReads),
+            "modules": try .encode(MacScopeMCPUtilityModule.allCases),
+            "count": .integer(Int64(actions.count)),
+            "actions": try .encode(actions)
+        ])
+    }
+
+    public func utilityState(
+        module: MacScopeMCPUtilityModule,
+        includeSensitive: Bool
+    ) async throws -> MacScopeMCPJSONValue {
+        try authorizeSensitiveRead(includeSensitive)
+        let state = try await utilityAccess.state(module: module, includeSensitive: includeSensitive)
+        return try document([
+            "schemaVersion": .integer(Int64(Self.schemaVersion)),
+            "module": .string(module.rawValue),
+            "redacted": .bool(!includeSensitive),
+            "state": includeSensitive ? state : state.redactingSensitiveFields()
+        ])
+    }
+
+    public func runUtility(
+        actionID: String,
+        arguments: [String: MacScopeMCPJSONValue]
+    ) async throws -> MacScopeMCPJSONValue {
+        guard configuration.allowUtilityWrites else { throw MacScopeMCPError.utilityWritesDisabled }
+        guard let action = MacScopeMCPUtilityCatalog.action(id: actionID) else {
+            throw MacScopeMCPError.unknownUtilityAction(actionID)
+        }
+        let result = try await utilityAccess.run(actionID: actionID, arguments: arguments)
+        return try document([
+            "schemaVersion": .integer(Int64(Self.schemaVersion)),
+            "accepted": .bool(true),
+            "action": try .encode(action),
+            "result": result
+        ])
+    }
+
+    public func listArtifacts(
+        kind: MacScopeMCPArtifactKind?,
+        includeSensitive: Bool,
+        limit: Int
+    ) throws -> MacScopeMCPJSONValue {
+        try authorizeSensitiveRead(includeSensitive)
+        let artifacts = MacScopeMCPArtifactStore.list(
+            kind: kind,
+            includeSensitive: includeSensitive,
+            limit: limit
+        )
+        return try document([
+            "schemaVersion": .integer(Int64(Self.schemaVersion)),
+            "redacted": .bool(!includeSensitive),
+            "artifactReadsEnabled": .bool(configuration.allowArtifactReads),
+            "count": .integer(Int64(artifacts.count)),
+            "artifacts": try .encode(artifacts)
+        ])
+    }
+
+    public func readArtifact(id: String, offset: Int64, length: Int) throws -> MacScopeMCPJSONValue {
+        guard configuration.allowArtifactReads else { throw MacScopeMCPError.artifactReadsDisabled }
+        return try document([
+            "schemaVersion": .integer(Int64(Self.schemaVersion)),
+            "chunk": try .encode(MacScopeMCPArtifactStore.read(id: id, offset: offset, length: length))
         ])
     }
 

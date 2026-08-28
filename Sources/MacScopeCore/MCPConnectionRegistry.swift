@@ -5,15 +5,34 @@ public struct MCPConnectionPolicy: Codable, Hashable, Sendable {
     public let sensitiveReads: Bool
     public let featureWrites: Bool
     public let experimentalFeatureWrites: Bool
+    public let utilityWrites: Bool
+    public let artifactReads: Bool
 
     public init(
         sensitiveReads: Bool,
         featureWrites: Bool,
-        experimentalFeatureWrites: Bool
+        experimentalFeatureWrites: Bool,
+        utilityWrites: Bool = false,
+        artifactReads: Bool = false
     ) {
         self.sensitiveReads = sensitiveReads
         self.featureWrites = featureWrites
         self.experimentalFeatureWrites = experimentalFeatureWrites
+        self.utilityWrites = utilityWrites
+        self.artifactReads = artifactReads
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sensitiveReads, featureWrites, experimentalFeatureWrites, utilityWrites, artifactReads
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        sensitiveReads = try values.decode(Bool.self, forKey: .sensitiveReads)
+        featureWrites = try values.decode(Bool.self, forKey: .featureWrites)
+        experimentalFeatureWrites = try values.decode(Bool.self, forKey: .experimentalFeatureWrites)
+        utilityWrites = try values.decodeIfPresent(Bool.self, forKey: .utilityWrites) ?? false
+        artifactReads = try values.decodeIfPresent(Bool.self, forKey: .artifactReads) ?? false
     }
 }
 

@@ -43,6 +43,32 @@ struct ShelfFlowTests {
         #expect(service.shelfItems.isEmpty)
     }
 
+    @Test("Compact shelf resolves the current Finder folder and moves every parked item") @MainActor
+    func compactShelfMovesAllParkedFiles() throws {
+        let fixture = try ShelfFixture()
+        defer { fixture.remove() }
+        let sources = try (1...3).map { index in
+            let source = fixture.source.appendingPathComponent("item-\(index).txt")
+            try Data("item \(index)".utf8).write(to: source)
+            return source
+        }
+        let service = SnippetShelfService(
+            finderDestinationProvider: { fixture.destination }
+        )
+        service.addShelfItems(sources)
+
+        service.moveShelfItemsToCurrentFinderFolder()
+
+        #expect(service.shelfItems.isEmpty)
+        for source in sources {
+            #expect(!FileManager.default.fileExists(atPath: source.path))
+            #expect(FileManager.default.fileExists(
+                atPath: fixture.destination.appendingPathComponent(source.lastPathComponent).path
+            ))
+        }
+        #expect(service.statusMessage == "Moved 3.")
+    }
+
     @Test("A name collision is never overwritten and stays parked") @MainActor
     func preservesNameCollision() throws {
         let fixture = try ShelfFixture()

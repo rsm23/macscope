@@ -29,6 +29,23 @@ final class AppModel {
     let keepAwake = KeepAwakeService()
     let quickToggles = QuickToggleService()
     let commandBar = CommandBarService()
+    let screenOCR = ScreenOCRService()
+    let colorPicker = ColorPickerService()
+    let screenRecorder = ScreenRecordingService()
+    let cameraPreview = CameraPreviewService()
+    let keyboardDebounce = KeyboardDebounceService()
+    let scrollDirection = ScrollDirectionService()
+    let mouseSideButtons = MouseSideButtonService()
+    let focusFollowsMouse = FocusFollowsMouseService()
+    let superKey = SuperKeyService()
+    let smoothScrolling = SmoothScrollingService()
+    let plainTextPaste = PlainTextPasteService()
+    let finderShortcuts = FinderShortcutService()
+    let scratchpad = ScratchpadService()
+    let media = MediaUtilityService()
+    let displayControl = DisplayControlService()
+    let cleaningMode = CleaningModeService()
+    @ObservationIgnored private lazy var mcpUtilityController = MacScopeMCPUtilityController(model: self)
 
     private let engine: TelemetryEngine
     private let alertNotifications: UsageAlertNotificationController
@@ -45,6 +62,9 @@ final class AppModel {
         self.engine = engine
         self.alertNotifications = alertNotifications
         if UtilityFeatureStore.isEnabled(.clipboard) { clipboard.restorePreference() }
+        // MCP utility requests must work for a menu-bar-only launch even when the
+        // main window is restored closed and its SwiftUI task never appears.
+        mcpUtilityController.start()
     }
 
     func start() {

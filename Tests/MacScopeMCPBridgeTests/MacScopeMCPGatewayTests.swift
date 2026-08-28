@@ -155,6 +155,84 @@ struct MacScopeMCPGatewayTests {
         }
     }
 
+    @Test("Utility catalog covers every module with unique executable IDs")
+    func utilityCatalogCoverage() {
+        let actions = MacScopeMCPUtilityCatalog.actions
+        #expect(actions.count >= 75)
+        #expect(Set(actions.map(\.id)).count == actions.count)
+        for module in MacScopeMCPUtilityModule.allCases {
+            #expect(actions.contains { $0.module == module })
+        }
+        #expect(actions.contains { $0.id == "capture.screenshot" && $0.producesArtifact })
+        #expect(actions.contains { $0.id == "capture.recording-start" && $0.producesArtifact })
+        #expect(actions.contains { $0.id == "clipboard.move-shelf-files" && $0.destructive })
+    }
+
+    @Test("Utility execution is opt-in and forwards only catalogued actions")
+    func utilityExecutionPolicy() async throws {
+        let utilities = FakeUtilityAccess()
+        let disabled = MacScopeMCPGateway(
+            snapshotSource: FakeSnapshotSource(), featureAccess: FakeFeatureAccess(), utilityAccess: utilities
+        )
+        do {
+            _ = try await disabled.runUtility(actionID: "sound.refresh", arguments: [:])
+            Issue.record("Utility execution succeeded without startup authorization")
+        } catch let error as MacScopeMCPError {
+            guard case .utilityWritesDisabled = error else {
+                Issue.record("Expected utilityWritesDisabled, received \(error)")
+                return
+            }
+        }
+
+        let enabled = MacScopeMCPGateway(
+            snapshotSource: FakeSnapshotSource(),
+            featureAccess: FakeFeatureAccess(),
+            utilityAccess: utilities,
+            configuration: .init(allowUtilityWrites: true)
+        )
+        _ = try await enabled.runUtility(actionID: "sound.set-system-volume", arguments: ["value": .number(0.4)])
+        #expect(await utilities.lastAction() == "sound.set-system-volume")
+
+        do {
+            _ = try await enabled.runUtility(actionID: "not.in.catalog", arguments: [:])
+            Issue.record("An unknown utility action was forwarded")
+        } catch let error as MacScopeMCPError {
+            guard case .unknownUtilityAction = error else {
+                Issue.record("Expected unknownUtilityAction, received \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("Utility state and artifact bytes enforce independent read capabilities")
+    func utilityReadPolicies() async throws {
+        let utilities = FakeUtilityAccess()
+        let gateway = MacScopeMCPGateway(
+            snapshotSource: FakeSnapshotSource(), featureAccess: FakeFeatureAccess(), utilityAccess: utilities
+        )
+        let state = try await gateway.utilityState(module: .notes, includeSensitive: false).jsonString()
+        #expect(state.contains("<redacted>"))
+
+        do {
+            _ = try await gateway.utilityState(module: .notes, includeSensitive: true)
+            Issue.record("Sensitive utility state was returned without authorization")
+        } catch let error as MacScopeMCPError {
+            guard case .sensitiveReadsDisabled = error else {
+                Issue.record("Expected sensitiveReadsDisabled, received \(error)")
+                return
+            }
+        }
+        do {
+            _ = try await gateway.readArtifact(id: "missing", offset: 0, length: 10)
+            Issue.record("Artifact bytes were read without authorization")
+        } catch let error as MacScopeMCPError {
+            guard case .artifactReadsDisabled = error else {
+                Issue.record("Expected artifactReadsDisabled, received \(error)")
+                return
+            }
+        }
+    }
+
     private func string(_ key: String, in document: MacScopeMCPJSONValue) throws -> String {
         guard case .object(let values) = document,
               case .string(let value)? = values[key] else {
@@ -162,6 +240,21 @@ struct MacScopeMCPGatewayTests {
         }
         return value
     }
+}
+
+private actor FakeUtilityAccess: MacScopeMCPUtilityAccess {
+    private var action: String?
+
+    func state(module: MacScopeMCPUtilityModule, includeSensitive: Bool) async throws -> MacScopeMCPJSONValue {
+        .object(["module": .string(module.rawValue), "path": .string("/private/secret")])
+    }
+
+    func run(actionID: String, arguments: [String: MacScopeMCPJSONValue]) async throws -> MacScopeMCPJSONValue {
+        action = actionID
+        return .object(["accepted": .bool(true)])
+    }
+
+    func lastAction() -> String? { action }
 }
 
 private enum TestError: Error {

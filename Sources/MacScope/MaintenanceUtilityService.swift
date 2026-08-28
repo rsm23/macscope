@@ -100,6 +100,21 @@ final class MediaUtilityService {
         statusMessage = nil
     }
 
+    /// Non-interactive counterpart used by the local MCP bridge.
+    func loadImages(_ urls: [URL]) {
+        let images = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !images.isEmpty else {
+            statusMessage = "No readable images were provided."
+            return
+        }
+        sourceURLs = images
+        sourceURL = images.first
+        outputURL = nil
+        outputURLs = []
+        gifOutputURL = nil
+        statusMessage = "Loaded \(images.count) image\(images.count == 1 ? "" : "s")."
+    }
+
     func convert(
         format: MediaExportFormat,
         quality: Double,

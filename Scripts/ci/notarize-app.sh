@@ -9,43 +9,53 @@ fi
 app_path="$1"
 archive_path="$2"
 
-required_variables=(ASC_PRIVATE_KEY_BASE64 ASC_KEY_ID ASC_ISSUER_ID)
-for variable_name in "${required_variables[@]}"; do
-  if [[ -z "${(P)variable_name:-}" ]]; then
-    echo "Required environment variable is missing: $variable_name" >&2
-    exit 78
-  fi
-done
-
 if [[ ! -d "$app_path" || "$app_path" != *.app ]]; then
   echo "Application bundle not found: $app_path" >&2
   exit 66
 fi
 
 runner_temp="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-api_key_path="$runner_temp/AuthKey_${ASC_KEY_ID}.p8"
+api_key_path=""
 submission_archive="$runner_temp/MacScope-notarization.zip"
 result_path="${archive_path:h}/notarization-result.json"
 log_path="${archive_path:h}/notarization-log.json"
+credential_arguments=()
+
+if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
+  credential_arguments=(--keychain-profile "$NOTARY_KEYCHAIN_PROFILE")
+elif [[ -n "${ASC_PRIVATE_KEY_BASE64:-}" && -n "${ASC_KEY_ID:-}" && -n "${ASC_ISSUER_ID:-}" ]]; then
+  api_key_path="$runner_temp/AuthKey_${ASC_KEY_ID}.p8"
+  printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$api_key_path"
+  chmod 600 "$api_key_path"
+  credential_arguments=(--key "$api_key_path" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID")
+elif [[ -n "${NOTARY_APPLE_ID:-}" && -n "${NOTARY_APP_PASSWORD:-}" && -n "${NOTARY_TEAM_ID:-}" ]]; then
+  credential_arguments=(
+    --apple-id "$NOTARY_APPLE_ID"
+    --password "$NOTARY_APP_PASSWORD"
+    --team-id "$NOTARY_TEAM_ID"
+  )
+else
+  echo "Notarization credentials are missing." >&2
+  echo "Set NOTARY_KEYCHAIN_PROFILE, Apple ID notarization variables, or App Store Connect API key variables." >&2
+  exit 78
+fi
 
 cleanup() {
-  rm -f "$api_key_path" "$submission_archive"
+  [[ -z "$api_key_path" ]] || rm -f "$api_key_path"
+  rm -f "$submission_archive"
 }
 trap cleanup EXIT
 
 mkdir -p "${archive_path:h}"
-rm -f "$api_key_path" "$submission_archive" "$result_path" "$log_path"
-printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$api_key_path"
-chmod 600 "$api_key_path"
+[[ -z "$api_key_path" ]] || rm -f "$api_key_path"
+rm -f "$submission_archive" "$result_path" "$log_path"
 
 codesign --verify --deep --strict --verbose=2 "$app_path"
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$submission_archive"
 
 set +e
 xcrun notarytool submit "$submission_archive" \
-  --key "$api_key_path" \
-  --key-id "$ASC_KEY_ID" \
-  --issuer "$ASC_ISSUER_ID" \
+  "${credential_arguments[@]}" \
   --wait \
   --timeout 30m \
   --output-format json > "$result_path"
@@ -58,9 +68,7 @@ notarization_status="$(plutil -extract status raw -o - "$result_path" 2>/dev/nul
 
 if [[ -n "$submission_id" ]]; then
   xcrun notarytool log "$submission_id" \
-    --key "$api_key_path" \
-    --key-id "$ASC_KEY_ID" \
-    --issuer "$ASC_ISSUER_ID" \
+    "${credential_arguments[@]}" \
     "$log_path" || true
 fi
 

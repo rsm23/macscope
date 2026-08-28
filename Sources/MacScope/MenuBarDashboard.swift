@@ -5,21 +5,114 @@ import SwiftUI
 
 struct MenuBarStatusLabel: View {
     let presentation: MenuBarPresentation
+    @AppStorage("menuBarReadoutMetrics") private var storedMetrics = MenuBarReadoutMetric.cpu.rawValue
+    @AppStorage("menuBarReadoutStyle") private var storedStyle = MenuBarReadoutStyle.values.rawValue
+
+    private var metrics: [MenuBarReadoutMetric] {
+        MenuBarReadoutMetric.selected(from: storedMetrics)
+    }
 
     var body: some View {
-        Label {
-            Text("CPU \(menuPercent(presentation.cpuUsage))")
-                .monospacedDigit()
-        } icon: {
+        HStack(spacing: 5) {
             Image(systemName: "waveform.path.ecg")
+            if (MenuBarReadoutStyle(rawValue: storedStyle) ?? .values) == .bars {
+                ForEach(metrics) { metric in
+                    if let fraction = metric.fraction(presentation) {
+                        VStack(spacing: 1) {
+                            Text(metric.shortName).font(.system(size: 8, weight: .semibold))
+                            ProgressView(value: fraction).frame(width: 24)
+                        }
+                    } else {
+                        Text(metric.value(presentation)).monospacedDigit()
+                    }
+                }
+            } else {
+                Text(metrics.map { $0.value(presentation) }.joined(separator: " · "))
+                    .monospacedDigit()
+            }
         }
-        .accessibilityLabel("MacScope, CPU \(menuPercent(presentation.cpuUsage))")
+        .accessibilityLabel("MacScope, \(metrics.map { $0.accessibilityValue(presentation) }.joined(separator: ", "))")
+    }
+}
+
+enum MenuBarReadoutStyle: String, CaseIterable, Identifiable {
+    case values = "Values"
+    case bars = "Usage bars"
+    var id: String { rawValue }
+}
+
+enum MenuBarReadoutMetric: String, CaseIterable, Identifiable {
+    case cpu = "CPU"
+    case memory = "Memory"
+    case network = "Network"
+    case battery = "Battery"
+    case batteryTime = "Battery time"
+    case fan = "Fan"
+
+    var id: String { rawValue }
+    var shortName: String {
+        switch self { case .memory: "MEM"; case .network: "NET"; case .battery: "BAT"; case .batteryTime: "TIME"; default: rawValue.uppercased() }
+    }
+
+    static func selected(from stored: String) -> [MenuBarReadoutMetric] {
+        let decoded = stored.split(separator: "|").compactMap { MenuBarReadoutMetric(rawValue: String($0)) }
+        return decoded.isEmpty ? [.cpu] : Array(decoded.prefix(4))
+    }
+
+    func value(_ data: MenuBarPresentation) -> String {
+        switch self {
+        case .cpu: "CPU \(menuPercent(data.cpuUsage))"
+        case .memory: "MEM \(data.memoryPercent.map(menuPercent) ?? "—")"
+        case .network: "↓\(compactRate(data.downloadRate)) ↑\(compactRate(data.uploadRate))"
+        case .battery: "BAT \(data.batteryPercent.map(menuPercent) ?? "—")"
+        case .batteryTime: data.batteryTimeRemaining ?? "TIME —"
+        case .fan: data.fanRPM.map { "FAN \(Int($0.rounded()))" } ?? "FAN —"
+        }
+    }
+
+    func accessibilityValue(_ data: MenuBarPresentation) -> String {
+        switch self {
+        case .cpu: "CPU \(menuPercent(data.cpuUsage))"
+        case .memory: "memory \(data.memoryPercent.map(menuPercent) ?? "unavailable")"
+        case .network: "download \(menuRate(data.downloadRate)), upload \(menuRate(data.uploadRate))"
+        case .battery: "battery \(data.batteryPercent.map(menuPercent) ?? "unavailable")"
+        case .batteryTime: "battery time \(data.batteryTimeRemaining ?? "unavailable")"
+        case .fan: "fan \(data.fanRPM.map { "\(Int($0.rounded())) RPM" } ?? "unavailable")"
+        }
+    }
+
+    func fraction(_ data: MenuBarPresentation) -> Double? {
+        switch self {
+        case .cpu: min(max(data.cpuUsage / 100, 0), 1)
+        case .memory: data.memoryPercent.map { min(max($0 / 100, 0), 1) }
+        case .battery: data.batteryPercent.map { min(max($0 / 100, 0), 1) }
+        case .network, .batteryTime, .fan: nil
+        }
+    }
+
+    private func compactRate(_ value: Double) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", value / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.0fK", value / 1_000) }
+        return "\(Int(max(value, 0)))"
     }
 }
 
 struct MenuBarPanel: View {
     @Environment(\.openWindow) private var openWindow
     let model: AppModel
+    @State private var selectedTab = MenuBarPanelTab.overview
+    @AppStorage("menuBarPanelTabOrder") private var storedTabOrder = ""
+    @AppStorage("menuBarPanelHiddenTabs") private var storedHiddenTabs = ""
+    @AppStorage(UtilityFeatureStore.disabledKey) private var disabledModules = ""
+
+    private var visibleTabs: [MenuBarPanelTab] {
+        MenuBarPanelTab.ordered(from: storedTabOrder).filter { tab in
+            let featureAvailable = tab != .windows
+                || UtilityFeatureStore.isEnabled(.windows, stored: disabledModules)
+            return featureAvailable
+                && (tab.isRequired || !MenuBarPanelTab.hidden(from: storedHiddenTabs).contains(tab))
+        }
+    }
 
     var body: some View {
         let dashboard = model.menuBarPresentation
@@ -27,27 +120,36 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             header(dashboard)
 
-            HStack(spacing: 8) {
-                MenuBarCompactTrend(
-                    title: "CPU history",
-                    value: menuPercent(dashboard.cpuUsage),
-                    points: dashboard.cpuTrend,
-                    tint: MacScopeTheme.accent
-                )
-                MenuBarCompactTrend(
-                    title: "Memory history",
-                    value: dashboard.memoryPercent.map(menuPercent) ?? "—",
-                    points: dashboard.memoryTrend,
-                    tint: MacScopeTheme.cyan
-                )
+            Picker("Preview", selection: $selectedTab) {
+                ForEach(visibleTabs) { tab in
+                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                }
             }
+            .pickerStyle(.segmented)
 
-            MenuBarThermalPanel(data: dashboard) {
-                showMainWindow(section: .thermals)
-            }
-
-            MenuBarNetworkPanel(data: dashboard) {
-                showMainWindow(section: .network)
+            Group {
+                switch selectedTab {
+                case .overview:
+                    overviewPanel(dashboard)
+                case .audio:
+                    MenuBarAudioPanel(mixer: model.audioMixer) {
+                        showMainWindow(section: .utilities)
+                    }
+                case .disk:
+                    MenuBarDiskPanel(disks: model.snapshot.disks) {
+                        showMainWindow(section: .storage)
+                    }
+                case .windows:
+                    MenuBarWindowsPanel()
+                case .quick:
+                    MenuBarQuickPanel(
+                        screenshots: model.screenshots,
+                        keepAwake: model.keepAwake,
+                        toggles: model.quickToggles
+                    ) {
+                        showMainWindow(section: .utilities)
+                    }
+                }
             }
 
             Divider()
@@ -94,6 +196,37 @@ struct MenuBarPanel: View {
         }
         .padding(12)
         .frame(width: 396)
+        .task { model.audioMixer.start() }
+        .onAppear { selectAvailableTab() }
+        .onChange(of: storedTabOrder) { _, _ in selectAvailableTab() }
+        .onChange(of: storedHiddenTabs) { _, _ in selectAvailableTab() }
+        .onChange(of: disabledModules) { _, _ in selectAvailableTab() }
+        .onDisappear { model.audioMixer.stop() }
+    }
+
+    @ViewBuilder private func overviewPanel(_ dashboard: MenuBarPresentation) -> some View {
+        HStack(spacing: 8) {
+            MenuBarCompactTrend(
+                title: "CPU history",
+                value: menuPercent(dashboard.cpuUsage),
+                points: dashboard.cpuTrend,
+                tint: MacScopeTheme.accent
+            )
+            MenuBarCompactTrend(
+                title: "Memory history",
+                value: dashboard.memoryPercent.map(menuPercent) ?? "—",
+                points: dashboard.memoryTrend,
+                tint: MacScopeTheme.cyan
+            )
+        }
+
+        MenuBarThermalPanel(data: dashboard) {
+            showMainWindow(section: .thermals)
+        }
+
+        MenuBarNetworkPanel(data: dashboard) {
+            showMainWindow(section: .network)
+        }
     }
 
     private func header(_ dashboard: MenuBarPresentation) -> some View {
@@ -137,6 +270,461 @@ struct MenuBarPanel: View {
             NSApp.windows.first(where: { $0.canBecomeMain && $0.title != "Settings" })?.makeKeyAndOrderFront(nil)
         }
     }
+
+    private func selectAvailableTab() {
+        if !visibleTabs.contains(selectedTab) {
+            selectedTab = visibleTabs.first ?? .audio
+        }
+    }
+}
+
+enum MenuBarPanelTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case audio = "Audio"
+    case disk = "Disk"
+    case windows = "Windows"
+    case quick = "Quick"
+
+    var id: String { rawValue }
+    var isRequired: Bool { self == .audio || self == .disk }
+    var icon: String {
+        switch self {
+        case .overview: "gauge.with.dots.needle.33percent"
+        case .audio: "speaker.wave.2"
+        case .disk: "internaldrive"
+        case .windows: "macwindow.on.rectangle"
+        case .quick: "bolt.fill"
+        }
+    }
+
+
+    static func ordered(from stored: String) -> [MenuBarPanelTab] {
+        var result = stored.split(separator: "|").compactMap { MenuBarPanelTab(rawValue: String($0)) }
+        for tab in allCases where !result.contains(tab) { result.append(tab) }
+        return result
+    }
+
+    static func hidden(from stored: String) -> Set<MenuBarPanelTab> {
+        Set(stored.split(separator: "|").compactMap { MenuBarPanelTab(rawValue: String($0)) })
+    }
+}
+
+private struct MenuBarWindowsPanel: View {
+    @State private var service = WindowSwitcherService()
+    @AppStorage("workspace.switcherThumbnailPrivacyApps") private var thumbnailPrivacyAppsRaw = ""
+
+    private var privacyExclusions: Set<String> {
+        Set(thumbnailPrivacyAppsRaw.split(separator: "|").map(String.init))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("Open windows").font(.headline)
+                Spacer()
+                Button(service.isLoadingThumbnails ? "Loading…" : "Refresh", systemImage: "arrow.clockwise") {
+                    refresh()
+                }
+                .disabled(service.isLoadingThumbnails)
+                .macScopeGlassButton()
+            }
+            if service.windows.isEmpty {
+                ContentUnavailableView(
+                    "No switchable windows",
+                    systemImage: "macwindow.badge.plus",
+                    description: Text("Open another app window, then refresh.")
+                )
+                .frame(height: 150)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(service.windows.prefix(20)) { window in
+                            Button {
+                                service.activate(window)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if let thumbnail = service.thumbnails[window.id] {
+                                        Image(nsImage: thumbnail)
+                                            .resizable().scaledToFill()
+                                            .frame(width: 92, height: 54).clipped()
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    } else {
+                                        Image(nsImage: window.icon)
+                                            .resizable().scaledToFit().frame(width: 32, height: 32)
+                                            .frame(width: 92, height: 54)
+                                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(window.title).font(.callout.weight(.medium)).lineLimit(1)
+                                        Text("\(window.ownerName) · \(window.isOnScreen ? "Visible" : "Minimized")")
+                                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 260)
+            }
+            if let status = service.statusMessage {
+                Text(status).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+        }
+        .onAppear { refresh() }
+    }
+
+    private func refresh() {
+        service.refresh()
+        service.loadThumbnails(excludingBundleIdentifiers: privacyExclusions)
+    }
+}
+
+private struct MenuBarQuickPanel: View {
+    let screenshots: ScreenshotService
+    let keepAwake: KeepAwakeService
+    let toggles: QuickToggleService
+    let openUtilities: () -> Void
+    @State private var confirmation: Confirmation?
+    @AppStorage(UtilityFeatureStore.disabledKey) private var disabledModules = ""
+
+    private enum Confirmation: String, Identifiable {
+        case emptyTrash
+        case ejectVolumes
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Quick actions").font(.headline)
+            if UtilityFeatureStore.isEnabled(.capture, stored: disabledModules) {
+                HStack(spacing: 8) {
+                    Button("Full screen", systemImage: "rectangle.inset.filled") {
+                        screenshots.capture(.fullScreen, copyToClipboard: true)
+                    }
+                    .disabled(screenshots.isCapturing)
+                    .macScopeGlassButton(prominent: true)
+                    Button("Selection", systemImage: "viewfinder") {
+                        screenshots.capture(.selection, copyToClipboard: true)
+                    }
+                    .disabled(screenshots.isCapturing)
+                    .macScopeGlassButton()
+                }
+            }
+            HStack(spacing: 8) {
+                Button("Lock Screen", systemImage: "lock.fill") { lockScreen() }
+                    .macScopeGlassButton()
+                Button("Sound Settings", systemImage: "speaker.wave.2") {
+                    openSettings("x-apple.systempreferences:com.apple.Sound-Settings.extension")
+                }
+                .macScopeGlassButton()
+                Button("Displays", systemImage: "display") {
+                    openSettings("x-apple.systempreferences:com.apple.Displays-Settings.extension")
+                }
+                .macScopeGlassButton()
+            }
+            HStack(spacing: 8) {
+                Toggle("Hidden files", isOn: Binding(
+                    get: { toggles.showsHiddenFiles },
+                    set: { toggles.setShowsHiddenFiles($0) }
+                ))
+                Toggle("Desktop icons", isOn: Binding(
+                    get: { toggles.showsDesktopIcons },
+                    set: { toggles.setShowsDesktopIcons($0) }
+                ))
+            }
+            .font(.caption)
+            .disabled(toggles.isApplying || toggles.isRefreshing)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                Button("Appearance", systemImage: "circle.lefthalf.filled") { toggles.toggleAppearance() }
+                    .macScopeGlassButton()
+                Button("Keyboard Light", systemImage: "keyboard.badge.ellipsis") {
+                    openSettings("x-apple.systempreferences:com.apple.Keyboard-Settings.extension")
+                }
+                .macScopeGlassButton()
+                Button("Eject All…", systemImage: "eject.fill") { confirmation = .ejectVolumes }
+                    .macScopeGlassButton()
+                Button("Empty Trash…", systemImage: "trash") { confirmation = .emptyTrash }
+                    .macScopeGlassButton()
+            }
+            .disabled(toggles.isApplying)
+            if UtilityFeatureStore.isEnabled(.power, stored: disabledModules) {
+                HStack(spacing: 10) {
+                    Image(systemName: keepAwake.isActive ? "cup.and.saucer.fill" : "moon.zzz")
+                        .foregroundStyle(keepAwake.isActive ? MacScopeTheme.accent : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(keepAwake.isActive ? "Keeping Mac awake" : "Normal sleep behavior")
+                            .font(.callout.weight(.medium))
+                        Text(keepAwake.endsAt?.formatted(date: .omitted, time: .shortened) ?? "Until stopped")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(keepAwake.isActive ? "Stop" : "Keep Awake") {
+                        if keepAwake.isActive { keepAwake.stop() }
+                        else { keepAwake.start(duration: nil, includesDisplay: false) }
+                    }
+                    .macScopeGlassButton()
+                }
+            }
+            if let error = screenshots.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+            if let message = toggles.statusMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("Open all utilities", systemImage: "arrow.up.forward.app", action: openUtilities)
+                    .buttonStyle(.link)
+            }
+        }
+        .task {
+            if UtilityFeatureStore.isEnabled(.capture, stored: disabledModules) { screenshots.refresh() }
+            toggles.refresh()
+        }
+        .confirmationDialog(
+            confirmation == .emptyTrash ? "Permanently empty the Trash?" : "Eject all removable volumes?",
+            isPresented: Binding(
+                get: { confirmation != nil },
+                set: { if !$0 { confirmation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if confirmation == .emptyTrash {
+                Button("Empty Trash", role: .destructive) {
+                    confirmation = nil
+                    toggles.emptyTrash()
+                }
+            } else if confirmation == .ejectVolumes {
+                Button("Eject Removable Volumes") {
+                    confirmation = nil
+                    toggles.ejectRemovableVolumes()
+                }
+            }
+            Button("Cancel", role: .cancel) { confirmation = nil }
+        } message: {
+            Text(confirmation == .emptyTrash
+                 ? "Items in the Trash cannot be recovered after this action."
+                 : "Save any open files on external volumes before ejecting them.")
+        }
+    }
+
+    private func openSettings(_ address: String) {
+        if let url = URL(string: address) { NSWorkspace.shared.open(url) }
+    }
+
+    private func lockScreen() {
+        let executable = URL(fileURLWithPath: "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession")
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else { return }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["-suspend"]
+        try? process.run()
+    }
+}
+
+private struct MenuBarAudioPanel: View {
+    let mixer: AudioMixerService
+    let openFullMixer: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    mixer.toggleSystemMute()
+                } label: {
+                    Image(systemName: mixer.systemMuted == true ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(mixer.systemMuted == nil)
+
+                if let volume = mixer.systemVolume {
+                    Slider(
+                        value: Binding(
+                            get: { mixer.systemVolume ?? volume },
+                            set: { mixer.setSystemVolume($0) }
+                        ),
+                        in: 0...1
+                    )
+                    Text("\(Int((mixer.systemVolume ?? volume) * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .frame(width: 40, alignment: .trailing)
+                } else {
+                    Text("Hardware-controlled output")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+                Divider().frame(height: 22)
+                Button {
+                    mixer.toggleInputMute()
+                } label: {
+                    Image(systemName: mixer.inputMuted == true ? "mic.slash.fill" : "mic.fill")
+                        .foregroundStyle(mixer.inputMuted == true ? .red : .primary)
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(mixer.inputMuted == nil)
+                .help(mixer.inputMuted == true ? "Unmute microphone" : "Mute microphone")
+            }
+
+            if mixer.apps.isEmpty {
+                Label("Start audio in an app to show it here.", systemImage: "waveform")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 90, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(mixer.apps.prefix(5)) { app in
+                        MenuBarAppVolumeRow(app: app, mixer: mixer)
+                        if app.id != mixer.apps.prefix(5).last?.id { Divider() }
+                    }
+                }
+            }
+
+            HStack {
+                if mixer.apps.count > 5 {
+                    Text("+\(mixer.apps.count - 5) more")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Open full mixer", systemImage: "arrow.up.forward.app", action: openFullMixer)
+                    .buttonStyle(.link)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct MenuBarAppVolumeRow: View {
+    let app: AudioMixerApp
+    let mixer: AudioMixerService
+    @State private var volume: Double
+
+    init(app: AudioMixerApp, mixer: AudioMixerService) {
+        self.app = app
+        self.mixer = mixer
+        _volume = State(initialValue: app.volume)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(app.isPlaying ? Color.green : Color.secondary.opacity(0.45))
+                .frame(width: 7, height: 7)
+            Text(app.name).font(.caption.weight(.medium)).lineLimit(1).frame(width: 90, alignment: .leading)
+            Button {
+                volume = app.volume > 0.001 ? 0 : 1
+                mixer.toggleMute(app)
+            } label: {
+                Image(systemName: app.volume <= 0.001 ? "speaker.slash" : "speaker.wave.1")
+            }
+            .buttonStyle(.plain)
+            Slider(value: $volume, in: 0...2) { editing in
+                if !editing { mixer.setVolume(volume, for: app) }
+            }
+            Text("\(Int(volume * 100))%")
+                .font(.caption2.monospacedDigit())
+                .frame(width: 38, alignment: .trailing)
+        }
+        .padding(.vertical, 7)
+        .onChange(of: app.volume) { _, next in
+            if abs(next - volume) > 0.005 { volume = next }
+        }
+    }
+}
+
+private struct MenuBarDiskPanel: View {
+    let disks: [DiskSnapshot]
+    let openStorage: () -> Void
+
+    private var devices: [PhysicalDiskActivity] {
+        PhysicalDiskActivityProjection.make(from: disks)
+    }
+
+    private var totalRead: Double {
+        devices.reduce(0) { $0 + max($1.io.readBytesPerSecond ?? 0, 0) }
+    }
+
+    private var totalWrite: Double {
+        devices.reduce(0) { $0 + max($1.io.writeBytesPerSecond ?? 0, 0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                diskRateCard(title: "Read", value: totalRead, icon: "arrow.down.to.line", tint: MacScopeTheme.cyan)
+                diskRateCard(title: "Write", value: totalWrite, icon: "arrow.up.to.line", tint: .orange)
+            }
+
+            if devices.isEmpty {
+                Label("Waiting for physical disk counters…", systemImage: "internaldrive")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 76, alignment: .center)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(devices.prefix(4)) { device in
+                        HStack(spacing: 10) {
+                            Image(systemName: "internaldrive")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name).font(.caption.weight(.medium)).lineLimit(1)
+                                Text(device.deviceIdentifier ?? device.io.provenance)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Label(compactRate(device.io.readBytesPerSecond), systemImage: "arrow.down")
+                                    .foregroundStyle(MacScopeTheme.cyan)
+                                Label(compactRate(device.io.writeBytesPerSecond), systemImage: "arrow.up")
+                                    .foregroundStyle(.orange)
+                            }
+                            .font(.caption2.monospacedDigit())
+                        }
+                        .padding(.vertical, 7)
+                        if device.id != devices.prefix(4).last?.id { Divider() }
+                    }
+                }
+            }
+
+            HStack {
+                Text("Updated live with MacScope sampling")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Open storage", systemImage: "arrow.up.forward.app", action: openStorage)
+                    .buttonStyle(.link)
+            }
+        }
+    }
+
+    private func diskRateCard(title: String, value: Double, icon: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                Text(compactRate(value)).font(.callout.weight(.semibold).monospacedDigit())
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private func compactRate(_ value: Double?) -> String {
+    guard let value, value.isFinite, value >= 0 else { return "—" }
+    return "\(ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .binary))/s"
 }
 
 struct MenuBarPresentation {
@@ -148,6 +736,8 @@ struct MenuBarPresentation {
     let uploadRate: Double
     let thermalPressure: String
     let fanRPM: Double?
+    let batteryPercent: Double?
+    let batteryTimeRemaining: String?
     let hottestSensor: MenuBarThermalReading?
     let cpuTrend: [MetricPoint]
     let memoryTrend: [MetricPoint]
@@ -175,6 +765,15 @@ struct MenuBarPresentation {
         fanRPM = snapshot.deep.fanSpeeds.values
             .filter { $0.isFinite && $0 >= 0 }
             .max()
+        batteryPercent = snapshot.battery.chargePercent
+        let batteryMinutes = snapshot.battery.isCharging
+            ? snapshot.battery.timeToFullMinutes
+            : snapshot.battery.timeToEmptyMinutes
+        if let batteryMinutes, batteryMinutes >= 0 {
+            batteryTimeRemaining = "\(snapshot.battery.isCharging ? "FULL" : "BAT") \(batteryMinutes / 60)h \(batteryMinutes % 60)m"
+        } else {
+            batteryTimeRemaining = nil
+        }
 
         let thermalReadings = snapshot.deep.sensors.compactMap { key, value -> MenuBarThermalReading? in
             guard value.isFinite, value > -20, value < 160 else { return nil }

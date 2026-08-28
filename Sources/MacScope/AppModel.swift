@@ -15,9 +15,20 @@ final class AppModel {
     var isRunning = false
     var lastError: String?
     var selectedSection: AppSection? = .overview
+    var selectedUtilityTab = UtilityTab.sound
     var processSearch = ""
     var startupSearch = ""
     var menuBarPresentation = MenuBarPresentation()
+    let audioMixer = AudioMixerService()
+    let musicBlocker = MusicAutoLaunchBlocker()
+    let workspace = WorkspaceUtilityService()
+    let snippetShelf = SnippetShelfService()
+    let clipboard = ClipboardHistoryService()
+    let maintenance = MaintenanceUtilityService()
+    let screenshots = ScreenshotService()
+    let keepAwake = KeepAwakeService()
+    let quickToggles = QuickToggleService()
+    let commandBar = CommandBarService()
 
     private let engine: TelemetryEngine
     private let alertNotifications: UsageAlertNotificationController
@@ -33,6 +44,7 @@ final class AppModel {
     ) {
         self.engine = engine
         self.alertNotifications = alertNotifications
+        if UtilityFeatureStore.isEnabled(.clipboard) { clipboard.restorePreference() }
     }
 
     func start() {
@@ -80,6 +92,7 @@ final class AppModel {
     func startAutomaticallyIfNeeded() {
         guard !didStartAutomatically else { return }
         didStartAutomatically = true
+        if UtilityFeatureStore.isEnabled(.capture) { screenshots.refresh() }
         start()
     }
 
@@ -189,6 +202,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case storage = "Storage & SMART"
     case processes = "Processes"
     case startup = "Startup"
+    case utilities = "Utilities"
     case features = "macOS Features"
     case hardware = "Hardware"
     case raw = "Raw Data"
@@ -208,6 +222,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .storage: "internaldrive"
         case .processes: "list.bullet.rectangle"
         case .startup: "power"
+        case .utilities: "wrench.and.screwdriver"
         case .features: "switch.2"
         case .hardware: "desktopcomputer"
         case .raw: "chevron.left.forwardslash.chevron.right"

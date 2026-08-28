@@ -24,9 +24,13 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026</string>
-	<key>NSPrincipalClass</key>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026</string>
+  <key>NSCameraUsageDescription</key>
+  <string>MacScope uses the camera only for the local camera preview you open.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>MacScope uses the microphone only when you explicitly include it in a screen recording.</string>
+  <key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>

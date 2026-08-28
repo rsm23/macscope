@@ -2,6 +2,7 @@ import AppKit
 import MacScopeCore
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     let model: AppModel
@@ -10,10 +11,28 @@ struct SettingsView: View {
     @AppStorage("expertModeEnabled") private var expertModeEnabled = false
     @AppStorage("redactExports") private var redactExports = true
     @AppStorage("launchAtLogin") private var launchAtLogin = false
+    @AppStorage("appAppearance") private var appAppearance = MacScopeAppearance.system.rawValue
+    @AppStorage("menuBarPanelTabOrder") private var menuBarPanelTabOrder = ""
+    @AppStorage("menuBarPanelHiddenTabs") private var menuBarPanelHiddenTabs = ""
+    @AppStorage("menuBarReadoutMetrics") private var menuBarReadoutMetrics = MenuBarReadoutMetric.cpu.rawValue
+    @AppStorage("menuBarReadoutStyle") private var menuBarReadoutStyle = MenuBarReadoutStyle.values.rawValue
+    @AppStorage("radialMenuActiveProfile") private var radialMenuActiveProfile = RadialMenuProfile.work.rawValue
+    @AppStorage("radialMenuConfigurations") private var radialMenuConfigurations = ""
+    @AppStorage("radialMenuTargets") private var radialMenuTargets = ""
+    @AppStorage("radialMenuThemes") private var radialMenuThemes = ""
+    @AppStorage("radialMenuKeyShortcuts") private var radialMenuKeyShortcuts = ""
+    @AppStorage("workspace.shelfEdgeEnabled") private var shelfEdgeEnabled = false
+    @AppStorage("workspace.shelfScreenEdge") private var shelfScreenEdge = ShelfScreenEdge.left.rawValue
+    @AppStorage("workspace.shelfTopDropZoneEnabled") private var shelfTopDropZoneEnabled = true
     @State private var helperStatus = "Checking…"
     @State private var mcpConfigurationStatus: String?
     @State private var mcpConnections: [MCPClientSession] = []
     @State private var mcpConnectionError: String?
+    @State private var settingsPortabilityStatus: String?
+    @State private var pendingImportedSettings: [String: Any]?
+    @State private var confirmsSettingsImport = false
+    @State private var shortcutRevision = 0
+    @State private var radialMenuStatus: String?
 
     private var helperService: SMAppService {
         .daemon(plistName: "local.taskmanager.MacScope.Helper.plist")
@@ -21,6 +40,9 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            FeatureHubSettingsView()
+                .tabItem { Label("Features", systemImage: "square.grid.3x3.fill") }
+
             SettingsPage(
                 title: "Sampling",
                 subtitle: "Balance update frequency with battery and CPU impact.",
@@ -77,6 +99,280 @@ struct SettingsView: View {
                                 .foregroundStyle(model.isRunning ? .green : .orange)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                SettingsSection(title: "Settings portability") {
+                    HStack(spacing: 16) {
+                        SettingsRowLabel(
+                            title: "Export or import configuration",
+                            detail: "Moves feature preferences between Macs. Scratchpads, snippets, clipboard data and history are excluded.",
+                            icon: "arrow.left.arrow.right.square"
+                        )
+                        Spacer(minLength: 20)
+                        Button("Export…", systemImage: "square.and.arrow.up") { exportSettings() }
+                            .macScopeGlassButton()
+                        Button("Import…", systemImage: "square.and.arrow.down") { chooseSettingsImport() }
+                            .macScopeGlassButton()
+                    }
+                    if let settingsPortabilityStatus {
+                        Text(settingsPortabilityStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+                    }
+                }
+
+                SettingsSection(title: "Appearance") {
+                    HStack(spacing: 16) {
+                        SettingsRowLabel(
+                            title: "MacScope appearance",
+                            detail: "Follow macOS or keep every MacScope surface consistently light or dark.",
+                            icon: "circle.lefthalf.filled"
+                        )
+                        Spacer(minLength: 20)
+                        Picker("Appearance", selection: $appAppearance) {
+                            ForEach(MacScopeAppearance.allCases) { appearance in
+                                Text(appearance.rawValue).tag(appearance.rawValue)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                }
+
+                SettingsSection(title: "Menu bar readout") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 16) {
+                            SettingsRowLabel(
+                                title: "Live menu bar metrics",
+                                detail: "Choose up to four values. Battery time and fan speed remain unavailable when macOS or the hardware does not report them.",
+                                icon: "menubar.rectangle"
+                            )
+                            Spacer(minLength: 20)
+                            Picker("Readout style", selection: $menuBarReadoutStyle) {
+                                ForEach(MenuBarReadoutStyle.allCases) { style in
+                                    Text(style.rawValue).tag(style.rawValue)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 130)
+                        }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 8)], alignment: .leading, spacing: 8) {
+                            ForEach(MenuBarReadoutMetric.allCases) { metric in
+                                Toggle(metric.rawValue, isOn: menuBarReadoutBinding(metric))
+                                    .toggleStyle(.checkbox)
+                            }
+                        }
+                    }
+                }
+
+                SettingsSection(title: "Dock and Quick preview") {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(MenuBarPanelTab.ordered(from: menuBarPanelTabOrder).enumerated()), id: \.element.id) { index, tab in
+                            HStack(spacing: 12) {
+                                Image(systemName: tab.icon)
+                                    .foregroundStyle(MacScopeTheme.accent)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(tab.rawValue).font(.callout.weight(.medium))
+                                    Text(tab.isRequired
+                                         ? "Always shown so live audio and disk data stay available."
+                                         : "Optional preview tab.")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if !tab.isRequired {
+                                    Toggle("Shown", isOn: previewTabVisibilityBinding(tab))
+                                        .labelsHidden()
+                                        .toggleStyle(.switch)
+                                }
+                                Button {
+                                    movePreviewTab(at: index, offset: -1)
+                                } label: { Image(systemName: "chevron.up") }
+                                    .buttonStyle(.plain)
+                                    .disabled(index == 0)
+                                    .help("Move up")
+                                Button {
+                                    movePreviewTab(at: index, offset: 1)
+                                } label: { Image(systemName: "chevron.down") }
+                                    .buttonStyle(.plain)
+                                    .disabled(index == MenuBarPanelTab.allCases.count - 1)
+                                    .help("Move down")
+                            }
+                            .padding(.vertical, 8)
+                            if index < MenuBarPanelTab.allCases.count - 1 { SettingsDivider() }
+                        }
+                    }
+                }
+
+                SettingsSection(title: "Radial menu") {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 16) {
+                            SettingsRowLabel(
+                                title: "Active profile",
+                                detail: "Open at the pointer with Control-Option-Space. Each profile keeps eight independent actions.",
+                                icon: "circle.hexagongrid.fill"
+                            )
+                            Spacer(minLength: 20)
+                            Picker("Radial menu profile", selection: $radialMenuActiveProfile) {
+                                ForEach(RadialMenuProfile.allCases) { profile in
+                                    Text(profile.rawValue).tag(profile.rawValue)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 140)
+                            Picker("Theme", selection: radialThemeBinding) {
+                                ForEach(RadialMenuTheme.allCases) { theme in
+                                    Text(theme.rawValue).tag(theme)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 105)
+                        }
+                        .padding(.vertical, 8)
+
+                        SettingsDivider()
+
+                        HStack(spacing: 12) {
+                            Image(systemName: "tray.full").foregroundStyle(MacScopeTheme.accent).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Session Shelf").font(.callout.weight(.medium))
+                                Text("Drag files or folders to the screen top, navigate in Finder, then click the shelf to move them.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Toggle("Top drop zone", isOn: $shelfTopDropZoneEnabled)
+                                .toggleStyle(.switch)
+                                .fixedSize()
+                        }
+                        .padding(.vertical, 8)
+
+                        HStack(spacing: 12) {
+                            Image(systemName: "rectangle.on.rectangle.angled").foregroundStyle(MacScopeTheme.accent).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Shelf edge shortcut").font(.callout.weight(.medium))
+                                Text("Open the full shelf with Control-Option-S or dwell at a chosen edge for 0.55 seconds.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Toggle("Edge", isOn: $shelfEdgeEnabled).labelsHidden().toggleStyle(.switch)
+                            Picker("Shelf edge", selection: $shelfScreenEdge) {
+                                ForEach(ShelfScreenEdge.allCases) { edge in Text(edge.rawValue).tag(edge.rawValue) }
+                            }
+                            .labelsHidden().frame(width: 100).disabled(!shelfEdgeEnabled)
+                        }
+                        .padding(.vertical, 8)
+
+                        SettingsDivider()
+
+                        ForEach(0..<8, id: \.self) { index in
+                            HStack(spacing: 12) {
+                                Text("\(index + 1)")
+                                    .font(.caption.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, height: 24)
+                                    .background(Color.primary.opacity(0.06), in: Circle())
+                                Image(systemName: radialActionBinding(at: index).wrappedValue.icon)
+                                    .foregroundStyle(MacScopeTheme.accent)
+                                    .frame(width: 22)
+                                Text("Slot \(index + 1)")
+                                    .font(.callout.weight(.medium))
+                                Spacer()
+                                Picker("Slot \(index + 1)", selection: radialActionBinding(at: index)) {
+                                    ForEach(RadialMenuAction.allCases) { action in
+                                        Label(action.rawValue, systemImage: action.icon).tag(action)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 185)
+                                if radialActionBinding(at: index).wrappedValue == .customItem {
+                                    Menu {
+                                        Button("Choose App, File or Folder…", systemImage: "folder") {
+                                            chooseRadialTarget(at: index)
+                                        }
+                                        Button("Enter Web Link…", systemImage: "link") {
+                                            enterRadialLink(at: index)
+                                        }
+                                        if let target = radialTarget(at: index), !target.url.isFileURL {
+                                            Button("Fetch Website Icon", systemImage: "photo.badge.arrow.down") {
+                                                fetchRadialWebsiteIcon(for: target, at: index)
+                                            }
+                                        }
+                                        if radialTarget(at: index) != nil {
+                                            Divider()
+                                            Button("Remove Target", systemImage: "trash", role: .destructive) {
+                                                setRadialTarget(nil, at: index)
+                                            }
+                                        }
+                                    } label: {
+                                        Text(radialTarget(at: index)?.title ?? "Choose…")
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: 120)
+                                } else if radialActionBinding(at: index).wrappedValue == .keyCombo {
+                                    Picker("Modifiers", selection: radialShortcutModifierBinding(at: index)) {
+                                        ForEach(GlobalShortcutModifier.allCases) { modifier in
+                                            Text(modifier.label).tag(modifier)
+                                        }
+                                    }
+                                    .labelsHidden().frame(width: 76)
+                                    Picker("Key", selection: radialShortcutKeyBinding(at: index)) {
+                                        ForEach(GlobalShortcutKey.choices) { key in
+                                            Text(key.label).tag(key.keyCode)
+                                        }
+                                    }
+                                    .labelsHidden().frame(width: 74)
+                                }
+                            }
+                            .padding(.vertical, 7)
+                            if index < 7 { SettingsDivider() }
+                        }
+                        if let radialMenuStatus {
+                            Text(radialMenuStatus)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                        }
+                    }
+                }
+
+                SettingsSection(title: "Global keyboard shortcuts") {
+                    VStack(alignment: .leading, spacing: 0) {
+                        let installedShortcuts = GlobalShortcutAction.allCases.filter(\.isInstalled)
+                        ForEach(Array(installedShortcuts.enumerated()), id: \.element.id) { index, action in
+                            let configuration = GlobalShortcutStore.configuration(for: action)
+                            HStack(spacing: 12) {
+                                Image(systemName: action.icon)
+                                    .foregroundStyle(MacScopeTheme.accent)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(action.title).font(.callout.weight(.medium))
+                                    Text(GlobalShortcutStore.conflicts().contains(action)
+                                         ? "Resolve this duplicate before the shortcut becomes active."
+                                         : configuration.displayLabel)
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(GlobalShortcutStore.conflicts().contains(action) ? .red : .secondary)
+                                }
+                                Spacer()
+                                Toggle("Enabled", isOn: globalShortcutEnabledBinding(action))
+                                    .labelsHidden().toggleStyle(.switch)
+                                Picker("Modifiers", selection: globalShortcutModifierBinding(action)) {
+                                    ForEach(GlobalShortcutModifier.allCases) { modifier in
+                                        Text(modifier.label).tag(modifier)
+                                    }
+                                }
+                                .labelsHidden().frame(width: 82)
+                                Picker("Key", selection: globalShortcutKeyBinding(action)) {
+                                    ForEach(GlobalShortcutKey.choices) { key in
+                                        Text(key.label).tag(key.keyCode)
+                                    }
+                                }
+                                .labelsHidden().frame(width: 88)
+                            }
+                            .id(shortcutRevision)
+                            .padding(.vertical, 7)
+                            if index < installedShortcuts.count - 1 { SettingsDivider() }
+                        }
                     }
                 }
             }
@@ -244,6 +540,344 @@ struct SettingsView: View {
             checkHelper()
             await monitorMCPConnections()
         }
+        .confirmationDialog(
+            "Import MacScope settings?",
+            isPresented: $confirmsSettingsImport,
+            titleVisibility: .visible
+        ) {
+            Button("Import and Restart Later") { applySettingsImport() }
+            Button("Cancel", role: .cancel) { pendingImportedSettings = nil }
+        } message: {
+            Text("This replaces the matching feature preferences in this account. Personal scratchpads, snippets and clipboard data are not imported. Restart MacScope afterward so every service reloads its configuration.")
+        }
+    }
+
+    private func exportSettings() {
+        let settings = UserDefaults.standard.dictionaryRepresentation().filter { Self.isPortableSetting($0.key) }
+        guard PropertyListSerialization.propertyList(settings, isValidFor: .xml) else {
+            settingsPortabilityStatus = "The current settings could not be encoded as a property list."
+            return
+        }
+        let panel = NSSavePanel()
+        panel.title = "Export MacScope Settings"
+        panel.prompt = "Export"
+        panel.allowedContentTypes = [.propertyList]
+        panel.nameFieldStringValue = "MacScope-Settings.plist"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: settings,
+                format: .xml,
+                options: 0
+            )
+            try data.write(to: url, options: .atomic)
+            settingsPortabilityStatus = "Exported \(settings.count) settings to \(url.lastPathComponent)."
+        } catch {
+            settingsPortabilityStatus = error.localizedDescription
+        }
+    }
+
+    private func previewTabVisibilityBinding(_ tab: MenuBarPanelTab) -> Binding<Bool> {
+        Binding(
+            get: { !MenuBarPanelTab.hidden(from: menuBarPanelHiddenTabs).contains(tab) },
+            set: { shown in
+                var hidden = MenuBarPanelTab.hidden(from: menuBarPanelHiddenTabs)
+                if shown { hidden.remove(tab) } else if !tab.isRequired { hidden.insert(tab) }
+                menuBarPanelHiddenTabs = MenuBarPanelTab.allCases
+                    .filter(hidden.contains)
+                    .map(\.rawValue)
+                    .joined(separator: "|")
+            }
+        )
+    }
+
+    private func menuBarReadoutBinding(_ metric: MenuBarReadoutMetric) -> Binding<Bool> {
+        Binding(
+            get: { MenuBarReadoutMetric.selected(from: menuBarReadoutMetrics).contains(metric) },
+            set: { included in
+                var selected = MenuBarReadoutMetric.selected(from: menuBarReadoutMetrics)
+                if included, !selected.contains(metric), selected.count < 4 {
+                    selected.append(metric)
+                } else if !included, selected.count > 1 {
+                    selected.removeAll { $0 == metric }
+                }
+                menuBarReadoutMetrics = selected.map(\.rawValue).joined(separator: "|")
+            }
+        )
+    }
+
+    private func movePreviewTab(at index: Int, offset: Int) {
+        var tabs = MenuBarPanelTab.ordered(from: menuBarPanelTabOrder)
+        let destination = index + offset
+        guard tabs.indices.contains(index), tabs.indices.contains(destination) else { return }
+        tabs.swapAt(index, destination)
+        menuBarPanelTabOrder = tabs.map(\.rawValue).joined(separator: "|")
+    }
+
+    private var selectedRadialProfile: RadialMenuProfile {
+        RadialMenuProfile(rawValue: radialMenuActiveProfile) ?? .work
+    }
+
+    private func globalShortcutEnabledBinding(_ action: GlobalShortcutAction) -> Binding<Bool> {
+        Binding(
+            get: { GlobalShortcutStore.configuration(for: action).enabled },
+            set: { enabled in
+                var value = GlobalShortcutStore.configuration(for: action)
+                value.enabled = enabled
+                GlobalShortcutStore.save(value, for: action)
+                shortcutRevision += 1
+            }
+        )
+    }
+
+    private func globalShortcutModifierBinding(_ action: GlobalShortcutAction) -> Binding<GlobalShortcutModifier> {
+        Binding(
+            get: { GlobalShortcutStore.configuration(for: action).modifier },
+            set: { modifier in
+                var value = GlobalShortcutStore.configuration(for: action)
+                value.modifier = modifier
+                GlobalShortcutStore.save(value, for: action)
+                shortcutRevision += 1
+            }
+        )
+    }
+
+    private func globalShortcutKeyBinding(_ action: GlobalShortcutAction) -> Binding<UInt32> {
+        Binding(
+            get: { GlobalShortcutStore.configuration(for: action).keyCode },
+            set: { keyCode in
+                guard let key = GlobalShortcutKey.choices.first(where: { $0.keyCode == keyCode }) else { return }
+                var value = GlobalShortcutStore.configuration(for: action)
+                value.keyCode = key.keyCode
+                value.keyLabel = key.label
+                GlobalShortcutStore.save(value, for: action)
+                shortcutRevision += 1
+            }
+        )
+    }
+
+    private var radialThemeBinding: Binding<RadialMenuTheme> {
+        Binding(
+            get: { RadialMenuConfigurationStore.theme(profile: selectedRadialProfile, json: radialMenuThemes) },
+            set: { theme in
+                radialMenuThemes = RadialMenuConfigurationStore.replacingTheme(
+                    profile: selectedRadialProfile,
+                    theme: theme,
+                    json: radialMenuThemes
+                )
+            }
+        )
+    }
+
+    private func radialActionBinding(at index: Int) -> Binding<RadialMenuAction> {
+        Binding(
+            get: {
+                let actions = RadialMenuConfigurationStore.actions(
+                    profile: selectedRadialProfile,
+                    json: radialMenuConfigurations
+                )
+                return actions.indices.contains(index) ? actions[index] : selectedRadialProfile.defaultActions[index]
+            },
+            set: { action in
+                var actions = RadialMenuConfigurationStore.actions(
+                    profile: selectedRadialProfile,
+                    json: radialMenuConfigurations
+                )
+                guard actions.indices.contains(index) else { return }
+                actions[index] = action
+                radialMenuConfigurations = RadialMenuConfigurationStore.replacing(
+                    profile: selectedRadialProfile,
+                    actions: actions,
+                    json: radialMenuConfigurations
+                )
+            }
+        )
+    }
+
+    private func radialTarget(at index: Int) -> RadialMenuTarget? {
+        RadialMenuConfigurationStore.target(
+            profile: selectedRadialProfile,
+            index: index,
+            json: radialMenuTargets
+        )
+    }
+
+    private func radialShortcutModifierBinding(at index: Int) -> Binding<GlobalShortcutModifier> {
+        Binding(
+            get: {
+                RadialMenuConfigurationStore.shortcut(
+                    profile: selectedRadialProfile, index: index, json: radialMenuKeyShortcuts
+                ).modifier
+            },
+            set: { modifier in
+                var shortcut = RadialMenuConfigurationStore.shortcut(
+                    profile: selectedRadialProfile, index: index, json: radialMenuKeyShortcuts
+                )
+                shortcut.modifier = modifier
+                radialMenuKeyShortcuts = RadialMenuConfigurationStore.replacingShortcut(
+                    profile: selectedRadialProfile,
+                    index: index,
+                    shortcut: shortcut,
+                    json: radialMenuKeyShortcuts
+                )
+            }
+        )
+    }
+
+    private func radialShortcutKeyBinding(at index: Int) -> Binding<UInt32> {
+        Binding(
+            get: {
+                RadialMenuConfigurationStore.shortcut(
+                    profile: selectedRadialProfile, index: index, json: radialMenuKeyShortcuts
+                ).keyCode
+            },
+            set: { keyCode in
+                guard let key = GlobalShortcutKey.choices.first(where: { $0.keyCode == keyCode }) else { return }
+                var shortcut = RadialMenuConfigurationStore.shortcut(
+                    profile: selectedRadialProfile, index: index, json: radialMenuKeyShortcuts
+                )
+                shortcut.keyCode = key.keyCode
+                shortcut.keyLabel = key.label
+                radialMenuKeyShortcuts = RadialMenuConfigurationStore.replacingShortcut(
+                    profile: selectedRadialProfile,
+                    index: index,
+                    shortcut: shortcut,
+                    json: radialMenuKeyShortcuts
+                )
+            }
+        )
+    }
+
+    private func setRadialTarget(_ target: RadialMenuTarget?, at index: Int) {
+        radialMenuTargets = RadialMenuConfigurationStore.replacingTarget(
+            profile: selectedRadialProfile,
+            index: index,
+            target: target,
+            json: radialMenuTargets
+        )
+    }
+
+    private func chooseRadialTarget(at index: Int) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Radial Menu Item"
+        panel.prompt = "Choose"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let title = url.pathExtension.lowercased() == "app"
+            ? url.deletingPathExtension().lastPathComponent
+            : url.lastPathComponent
+        setRadialTarget(.init(url: url.standardizedFileURL, title: title), at: index)
+    }
+
+    private func enterRadialLink(at index: Int) {
+        let alert = NSAlert()
+        alert.messageText = "Radial menu web link"
+        alert.informativeText = "Enter an HTTPS address and a short label."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 8
+        let address = NSTextField(string: radialTarget(at: index)?.url.absoluteString ?? "https://")
+        address.placeholderString = "https://example.com"
+        let title = NSTextField(string: radialTarget(at: index)?.title ?? "")
+        title.placeholderString = "Label"
+        stack.addArrangedSubview(address)
+        stack.addArrangedSubview(title)
+        stack.frame = NSRect(x: 0, y: 0, width: 340, height: 56)
+        alert.accessoryView = stack
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let url = URL(string: address.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              url.scheme == "https" || url.scheme == "http" else { return }
+        let label = title.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        setRadialTarget(.init(url: url, title: String((label.isEmpty ? url.host ?? "Website" : label).prefix(40))), at: index)
+    }
+
+    private func fetchRadialWebsiteIcon(for target: RadialMenuTarget, at index: Int) {
+        guard let scheme = target.url.scheme,
+              let host = target.url.host,
+              let faviconURL = URL(string: "\(scheme)://\(host)/favicon.ico") else { return }
+        Task {
+            do {
+                let (data, response) = try await URLSession.shared.data(from: faviconURL)
+                guard data.count <= 1_000_000,
+                      (response as? HTTPURLResponse)?.statusCode == 200,
+                      NSImage(data: data) != nil else {
+                    radialMenuStatus = "That website did not provide a usable /favicon.ico image."
+                    return
+                }
+                setRadialTarget(.init(url: target.url, title: target.title, iconData: data), at: index)
+                radialMenuStatus = "Fetched the website icon for \(target.title)."
+            } catch {
+                radialMenuStatus = "Website icon fetch failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func chooseSettingsImport() {
+        let panel = NSOpenPanel()
+        panel.title = "Import MacScope Settings"
+        panel.prompt = "Review Import"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.propertyList]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let dictionary = try PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            ) as? [String: Any] else {
+                throw NSError(
+                    domain: "MacScope.Settings", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected file is not a MacScope settings dictionary."]
+                )
+            }
+            let filtered = dictionary.filter { Self.isPortableSetting($0.key) }
+            guard !filtered.isEmpty else {
+                throw NSError(
+                    domain: "MacScope.Settings", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected file contains no portable MacScope settings."]
+                )
+            }
+            pendingImportedSettings = filtered
+            settingsPortabilityStatus = "Ready to import \(filtered.count) settings from \(url.lastPathComponent)."
+            confirmsSettingsImport = true
+        } catch {
+            pendingImportedSettings = nil
+            settingsPortabilityStatus = error.localizedDescription
+        }
+    }
+
+    private func applySettingsImport() {
+        guard let pendingImportedSettings else { return }
+        for (key, value) in pendingImportedSettings {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+        self.pendingImportedSettings = nil
+        confirmsSettingsImport = false
+        settingsPortabilityStatus = "Imported \(pendingImportedSettings.count) settings. Restart MacScope to reload every service."
+    }
+
+    private static func isPortableSetting(_ key: String) -> Bool {
+        let excludedFragments = [
+            "scratchpad", "savedSnippets", "clipboardPinned", "clipboardHistory",
+            "processHistory", "recent", "captured", "outputURL"
+        ]
+        guard !excludedFragments.contains(where: { key.localizedCaseInsensitiveContains($0) }) else { return false }
+        let exact: Set<String> = [
+            "samplingProfile", "expertModeEnabled", "redactExports", "launchAtLogin"
+        ]
+        let prefixes = [
+            "utility.", "workspace.", "commandBar.", "audio.", "input.",
+            "screenshot.", "recording.", "quickPanel.", "menuBar.", "alerts.",
+            "feature.", "usageAlert.", "radialMenu", "globalShortcut."
+        ]
+        return exact.contains(key) || prefixes.contains(where: key.hasPrefix)
     }
 
     private func configureLogin(_ enabled: Bool) {

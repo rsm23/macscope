@@ -1,9 +1,25 @@
 import MacScopeCore
 import SwiftUI
 
+enum MacScopeAppearance: String, CaseIterable, Identifiable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
+
+    var id: String { rawValue }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 enum MacScopeTheme {
     static let accent = Color(red: 0.12, green: 0.58, blue: 0.95)
     static let cyan = Color(red: 0.18, green: 0.78, blue: 0.82)
+    static let contentBackground = Color(nsColor: .underPageBackgroundColor)
     static let warning = Color.orange
     static let critical = Color.red
     static let cardRadius: CGFloat = 10

@@ -37,12 +37,28 @@ struct SectionContent: View {
             case .storage: StorageView(model: model)
             case .processes: ProcessesView(model: model)
             case .startup: StartupView(model: model)
+            case .utilities:
+                UtilitiesView(
+                    mixer: model.audioMixer,
+                    musicBlocker: model.musicBlocker,
+                    workspace: model.workspace,
+                    snippetShelf: model.snippetShelf,
+                    clipboard: model.clipboard,
+                    maintenance: model.maintenance,
+                    screenshots: model.screenshots,
+                    keepAwake: model.keepAwake,
+                    selectedTab: Binding(
+                        get: { model.selectedUtilityTab },
+                        set: { model.selectedUtilityTab = $0 }
+                    )
+                )
             case .features: MacOSFeaturesView()
             case .hardware: HardwareView(model: model)
             case .raw: RawDataView(model: model)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MacScopeTheme.contentBackground)
     }
 }
 

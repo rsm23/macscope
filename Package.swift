@@ -32,9 +32,18 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("AppKit"),
+                .linkedFramework("Accelerate"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("AVFoundation"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("CoreAudio"),
+                .linkedFramework("CoreMedia"),
                 .linkedFramework("Charts"),
+                .linkedFramework("IOKit"),
+                .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("ServiceManagement"),
-                .linkedFramework("UserNotifications")
+                .linkedFramework("UserNotifications"),
+                .linkedFramework("Vision")
             ]
         ),
         .executableTarget(
@@ -56,6 +65,11 @@ let package = Package(
             ]
         ),
         .testTarget(name: "MacScopeCoreTests", dependencies: ["MacScopeCore"]),
+        .testTarget(
+            name: "MacScopeTests",
+            dependencies: ["MacScope"],
+            linkerSettings: [.linkedFramework("AVFoundation")]
+        ),
         .testTarget(name: "MacScopeMCPBridgeTests", dependencies: ["MacScopeMCPBridge", "MacScopeCore"])
     ],
     swiftLanguageModes: [.v6]

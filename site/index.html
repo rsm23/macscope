@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="MacScope is a native Apple-silicon system monitor, process manager, and power-user toolkit for macOS 14+."
+    />
+    <meta name="theme-color" content="#03070c" />
+    <meta property="og:title" content="MacScope — See your Mac. Shape how it works." />
+    <meta
+      property="og:description"
+      content="Live system telemetry, deep process control, and a complete utility belt — built natively for Apple silicon."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://rsm23.github.io/macscope/assets/macscope-overview.png"
+    />
+    <title>MacScope — Native system intelligence for macOS</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <div class="boot" aria-hidden="true">
+      <div class="boot__mark">
+        <span></span><span></span><span></span>
+      </div>
+      <p>MacScope</p>
+    </div>
+
+    <div class="page-progress" aria-hidden="true"><span></span></div>
+    <canvas id="signal-canvas" aria-hidden="true"></canvas>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="MacScope home">
+        <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+          <path d="M5 24.5 10.3 16l5.2 5.2L21.6 9 31 14.4" />
+          <circle cx="5" cy="24.5" r="2.2" />
+          <circle cx="31" cy="14.4" r="2.2" />
+        </svg>
+        <span>MacScope</span>
+      </a>
+
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+        <span></span><span></span><span></span>
+        <span class="sr-only">Toggle navigation</span>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="#monitor">Monitor</a>
+        <a href="#utilities">Utilities</a>
+        <a href="#features">Features</a>
+        <a class="nav-github" href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">
+          GitHub
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 11 11 5M6 5h5v5" /></svg>
+        </a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top" aria-labelledby="hero-title">
+        <div class="hero__copy">
+          <h1 id="hero-title" data-split>
+            <span>See your Mac.</span>
+            <span>Shape how</span>
+            <span>it works.</span>
+          </h1>
+          <p class="hero__lede reveal">
+            Live system telemetry, deep process control, and a complete utility belt — built
+            natively for Apple silicon.
+          </p>
+          <div class="hero__actions reveal">
+            <a class="button button--primary magnetic" href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">
+              <span>View on GitHub</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" /></svg>
+            </a>
+            <a class="button button--ghost magnetic" href="#monitor">
+              <span>Explore the app</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M5 11l5 5 5-5" /></svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero__visual" data-parallax="0.09">
+          <div class="hero-orbit hero-orbit--one" aria-hidden="true"></div>
+          <div class="hero-orbit hero-orbit--two" aria-hidden="true"></div>
+          <figure class="app-frame app-frame--hero" data-tilt>
+            <img
+              src="assets/macscope-overview.png"
+              width="2400"
+              height="1290"
+              alt="MacScope Overview showing live CPU, memory, network, process, and system pulse telemetry"
+              fetchpriority="high"
+            />
+            <figcaption>Live on this Mac</figcaption>
+          </figure>
+          <div class="telemetry-float telemetry-float--cpu" aria-hidden="true">
+            <span>CPU</span>
+            <svg viewBox="0 0 120 36"><path d="M2 25 18 22 28 25 40 10 54 23 66 20 78 25 91 15 104 21 118 16" /></svg>
+          </div>
+          <div class="telemetry-float telemetry-float--memory" aria-hidden="true">
+            <span>MEMORY</span><strong>LIVE</strong>
+          </div>
+        </div>
+
+        <a class="scroll-cue" href="#manifesto" aria-label="Scroll to introduction">
+          <span>Scroll</span><i></i>
+        </a>
+      </section>
+
+      <section class="manifesto" id="manifesto">
+        <div class="manifesto__line draw-line" aria-hidden="true"></div>
+        <p class="section-index reveal">01 / NATIVE</p>
+        <h2 class="reveal">One native command center.</h2>
+        <p class="reveal">
+          Monitoring, control, and the tools you reach for every day — together in a fast,
+          focused macOS app.
+        </p>
+      </section>
+
+      <section class="monitor section" id="monitor" aria-labelledby="monitor-title">
+        <svg class="circuit circuit--monitor" viewBox="0 0 1100 300" preserveAspectRatio="none" aria-hidden="true">
+          <path class="circuit__path" d="M0 205h145l48-48h102l54-76h146l54 96h127l48-44h142l54 73h180" />
+          <path class="circuit__path circuit__path--dim" d="M0 238h210l42-38h94l55 56h180l43-74h220l35 26h221" />
+          <g class="circuit__nodes"><circle cx="193" cy="157" r="4"/><circle cx="495" cy="177" r="4"/><circle cx="724" cy="133" r="4"/><circle cx="920" cy="206" r="4"/></g>
+        </svg>
+
+        <div class="monitor__copy section-copy">
+          <p class="section-index reveal">02 / MONITOR</p>
+          <h2 id="monitor-title" class="reveal">The signal,<br />without the noise.</h2>
+          <p class="section-intro reveal">
+            Watch CPU, memory, disk, network, thermals, and every running process in one calm,
+            high-density workspace.
+          </p>
+
+          <ul class="signal-list">
+            <li class="reveal">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2 17h6l3-10 5 20 4-15 3 5h7" /></svg>
+              <span><strong>Live telemetry</strong>Real-time insight across your system.</span>
+            </li>
+            <li class="reveal">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 9h24M4 16h24M4 23h24M10 6v6M22 13v6M14 20v6" /></svg>
+              <span><strong>Process control</strong>Spot, sort, inspect, and safely act.</span>
+            </li>
+            <li class="reveal">
+              <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12"/><path d="M16 9v8l5 3" /></svg>
+              <span><strong>Local history</strong>Tiered snapshots keep context close.</span>
+            </li>
+          </ul>
+        </div>
+
+        <figure class="app-frame app-frame--process reveal-media" data-tilt>
+          <img
+            src="assets/macscope-processes.png"
+            width="2400"
+            height="1290"
+            alt="MacScope Processes view with process charts, resource usage, and sortable process table"
+            loading="lazy"
+          />
+        </figure>
+      </section>
+
+      <section class="utilities section" id="utilities" aria-labelledby="utilities-title">
+        <div class="utilities__heading">
+          <p class="section-index reveal">03 / UTILITIES</p>
+          <h2 id="utilities-title" class="reveal">More than a monitor.</h2>
+          <p class="section-intro reveal">
+            Capture, arrange, switch, clean, automate, and control your Mac without breaking focus.
+          </p>
+        </div>
+
+        <div class="capability-rail reveal" role="tablist" aria-label="MacScope utility areas">
+          <button type="button" role="tab" aria-selected="true" data-capability="sound">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 20h4l6 6V6l-6 6H6v8ZM22 11c2 2 2 8 0 10M26 8c5 5 5 11 0 16" /></svg>
+            <span>Sound</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="capture">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="8" width="24" height="18" rx="3"/><path d="m11 8 2-3h6l2 3M12 17a4 4 0 1 0 8 0 4 4 0 0 0-8 0Z" /></svg>
+            <span>Capture</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="windows">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="5" width="24" height="22" rx="2"/><path d="M4 11h24M15 11v16" /></svg>
+            <span>Windows</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="clipboard">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M11 7H7v21h18V7h-4M12 4h8v6h-8z" /></svg>
+            <span>Clipboard</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="maintenance">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="m7 25 9-9M19 13l6-6M18 6l8 8M5 20l7 7M8 4a7 7 0 0 0 8 8" /></svg>
+            <span>Maintenance</span>
+          </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="power">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="9" width="24" height="14" rx="3"/><path d="M28 14h2v4h-2M7 13h12" /></svg>
+            <span>Power</span>
+          </button>
+        </div>
+
+        <p class="capability-note reveal" aria-live="polite">
+          <span data-capability-title>Independent app audio, output routing, and quick switching.</span>
+          <i>Explore in MacScope</i>
+        </p>
+
+        <figure class="app-frame app-frame--utilities reveal-media" data-tilt>
+          <img
+            src="assets/macscope-utilities.png"
+            width="2400"
+            height="1290"
+            alt="MacScope Utilities Sound view with system output and independent per-app volume controls"
+            loading="lazy"
+          />
+        </figure>
+      </section>
+
+      <section class="features section" id="features" aria-labelledby="features-title">
+        <figure class="app-frame app-frame--features reveal-media" data-tilt>
+          <img
+            src="assets/macscope-features.png"
+            width="2400"
+            height="1290"
+            alt="MacScope macOS Features catalog with direct controls, settings guides, and protected actions"
+            loading="lazy"
+          />
+        </figure>
+
+        <div class="features__copy section-copy">
+          <p class="section-index reveal">04 / CONTROL</p>
+          <h2 id="features-title" class="reveal">Your Mac,<br />on your terms.</h2>
+          <p class="section-intro reveal">
+            Discover more than 200 hidden and useful macOS controls, with exact-value undo and
+            clear safety states.
+          </p>
+          <dl class="control-list">
+            <div class="reveal">
+              <dt>Direct controls</dt>
+              <dd>Inspect live values, preview changes, and undo exactly.</dd>
+            </div>
+            <div class="reveal">
+              <dt>System Settings</dt>
+              <dd>Find deeper controls without hunting through panels.</dd>
+            </div>
+            <div class="reveal">
+              <dt>Protected actions</dt>
+              <dd>Confirm consequential changes before they run.</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="trust" aria-label="Privacy and telemetry principles">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></svg>
+        <p>Local by default. Explicit permissions. No invented telemetry.</p>
+      </section>
+
+      <section class="final-cta" aria-labelledby="cta-title">
+        <svg class="cta-trace" viewBox="0 0 1600 560" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M-30 96C210 120 279 217 173 297 67 377 265 459 588 389c346-76 592-43 1044 159" />
+        </svg>
+        <div class="final-cta__inner">
+          <p class="section-index reveal">05 / MACSCOPE</p>
+          <h2 id="cta-title" class="reveal">Know more. Reach less.</h2>
+          <p class="reveal">
+            The system monitor and the toolbox, together in one fast, private, native app.
+          </p>
+          <div class="final-cta__actions reveal">
+            <a class="button button--primary magnetic" href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">
+              <span>Get MacScope</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" /></svg>
+            </a>
+            <a class="text-link" href="https://github.com/rsm23/macscope#readme" target="_blank" rel="noreferrer">
+              Read the documentation <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="#top" aria-label="Back to top">
+        <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
+          <path d="M5 24.5 10.3 16l5.2 5.2L21.6 9 31 14.4" />
+          <circle cx="5" cy="24.5" r="2.2" />
+          <circle cx="31" cy="14.4" r="2.2" />
+        </svg>
+        <span>MacScope</span>
+      </a>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/rsm23/macscope/blob/main/docs/MCP_SERVER.md" target="_blank" rel="noreferrer">MCP Server</a>
+        <a href="https://github.com/rsm23/macscope#security-model" target="_blank" rel="noreferrer">Security</a>
+        <a href="https://github.com/rsm23/macscope#build-and-test" target="_blank" rel="noreferrer">Build guide</a>
+      </nav>
+      <p>Built natively for macOS 14+ on Apple silicon.</p>
+    </footer>
+  </body>
+</html>

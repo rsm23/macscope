@@ -60,7 +60,9 @@ jobs:
           --server dist/MacScope.app/Contents/Resources/MacScopeMCPServer
 
       - name: Archive application
-        run: ./Scripts/ci/archive-app.sh dist/MacScope.app dist/MacScope-arm64.zip
+        run: |
+          ./Scripts/ci/archive-app.sh dist/MacScope.app dist/MacScope-arm64.zip
+          ./Scripts/ci/create-dmg.sh dist/MacScope.app dist/MacScope-arm64.dmg
 
       - name: Upload application artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -69,5 +71,7 @@ jobs:
           path: |
             dist/MacScope-arm64.zip
             dist/MacScope-arm64.zip.sha256
+            dist/MacScope-arm64.dmg
+            dist/MacScope-arm64.dmg.sha256
           if-no-files-found: error
           retention-days: 14

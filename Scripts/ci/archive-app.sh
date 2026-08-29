@@ -23,6 +23,6 @@ mkdir -p "${archive_path:h}"
 rm -f "$archive_path" "$archive_path.sha256"
 
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$archive_path"
-shasum -a 256 "$archive_path" > "$archive_path.sha256"
+(cd "${archive_path:h}" && shasum -a 256 "${archive_path:t}") > "$archive_path.sha256"
 
 echo "$archive_path"

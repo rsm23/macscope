@@ -382,6 +382,13 @@ img {
   margin-top: 2.2rem;
 }
 
+.download-meta {
+  margin: 0.9rem 0 0;
+  color: #778596;
+  font: 0.66rem/1.5 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
 .button {
   --mx: 0px;
   --my: 0px;
@@ -1088,6 +1095,13 @@ img {
 .final-cta__actions {
   flex-direction: column;
   justify-content: center;
+}
+
+.download-note {
+  max-width: 34rem;
+  margin: 0.25rem auto 0;
+  color: #7f8b99;
+  font: 0.7rem/1.55 var(--font-mono);
 }
 
 .text-link {

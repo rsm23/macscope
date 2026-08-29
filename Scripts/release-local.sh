@@ -74,7 +74,10 @@ fi
 
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 archive_path="$root_dir/dist/MacScope-${version}-arm64.zip"
+disk_image_path="$root_dir/dist/MacScope-${version}-arm64.dmg"
 NOTARY_KEYCHAIN_PROFILE="$profile_name" \
   ./Scripts/ci/notarize-app.sh "$root_dir/dist/MacScope.app" "$archive_path"
+./Scripts/ci/create-dmg.sh "$root_dir/dist/MacScope.app" "$disk_image_path"
 
 echo "Release ready: $archive_path"
+echo "Installer ready: $disk_image_path"

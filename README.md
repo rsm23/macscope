@@ -19,6 +19,12 @@ MacScope combines live system telemetry, safe process management, reversible mac
 
 > MacScope is under active development. Build it from source or use the development bundle produced by the packaging script. Deep telemetry and protected actions remain permission-gated by macOS.
 
+## Download
+
+[Download MacScope 0.1.0 for Apple silicon](https://github.com/rsm23/macscope/releases/download/v0.1.0/MacScope-0.1.0-arm64.dmg) (macOS 14 or newer).
+
+Open the DMG and drag `MacScope.app` to the Applications shortcut. The current preview is development-signed and not yet Apple-notarized, so Control-click `MacScope.app` and choose **Open** the first time you launch it. Release checksums are available beside the DMG on GitHub.
+
 ## At a glance
 
 | Area | What MacScope includes |

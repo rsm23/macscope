@@ -10,6 +10,8 @@
 	<string>MacScope</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.taskmanager.MacScope</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

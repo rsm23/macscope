@@ -19,7 +19,8 @@
       content="https://rsm23.github.io/macscope/assets/macscope-overview.png"
     />
     <title>MacScope — Native system intelligence for macOS</title>
-    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/macscope-app-icon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/macscope-app-icon.png" />
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
   </head>
@@ -38,11 +39,7 @@
 
     <header class="site-header" data-header>
       <a class="brand" href="#top" aria-label="MacScope home">
-        <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
-          <path d="M5 24.5 10.3 16l5.2 5.2L21.6 9 31 14.4" />
-          <circle cx="5" cy="24.5" r="2.2" />
-          <circle cx="31" cy="14.4" r="2.2" />
-        </svg>
+        <img class="brand__mark" src="assets/macscope-app-icon.png" alt="" />
         <span>MacScope</span>
       </a>
 
@@ -54,6 +51,7 @@
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="#monitor">Monitor</a>
         <a href="#utilities">Utilities</a>
+        <a href="#toolkit">Toolkit</a>
         <a href="#features">Features</a>
         <a class="nav-github" href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">
           GitHub
@@ -65,6 +63,7 @@
     <main id="main">
       <section class="hero" id="top" aria-labelledby="hero-title">
         <div class="hero__copy">
+          <img class="hero__icon reveal" src="assets/macscope-app-icon.png" alt="MacScope app icon" />
           <h1 id="hero-title" data-split>
             <span>See your Mac.</span>
             <span>Shape how</span>
@@ -191,6 +190,10 @@
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M11 7H7v21h18V7h-4M12 4h8v6h-8z" /></svg>
             <span>Clipboard</span>
           </button>
+          <button type="button" role="tab" aria-selected="false" data-capability="notes">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 5h18v22H7zM11 11h10M11 16h10M11 21h7" /></svg>
+            <span>Notes</span>
+          </button>
           <button type="button" role="tab" aria-selected="false" data-capability="maintenance">
             <svg viewBox="0 0 32 32" aria-hidden="true"><path d="m7 25 9-9M19 13l6-6M18 6l8 8M5 20l7 7M8 4a7 7 0 0 0 8 8" /></svg>
             <span>Maintenance</span>
@@ -217,6 +220,66 @@
         </figure>
       </section>
 
+      <section class="toolkit section" id="toolkit" aria-labelledby="toolkit-title">
+        <div class="toolkit__intro">
+          <p class="section-index reveal">04 / TOOLKIT</p>
+          <h2 id="toolkit-title" class="reveal">Seven workspaces.<br />One less crowded Mac.</h2>
+          <p class="section-intro reveal">
+            Each module is native, local, and optional. Install the bundles you need, remove the
+            ones you do not, and keep audio plus live disk activity always within reach.
+          </p>
+        </div>
+
+        <div class="toolkit__list" aria-label="Complete MacScope utility catalog">
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">01</span>
+            <h3>Sound</h3>
+            <p>Switch inputs and outputs, route apps, mix each app from 0–200%, mute microphones, pin an input, and protect volume after headphones disconnect.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">02</span>
+            <h3>Capture &amp; media</h3>
+            <p>Take timed, window, selection, and scrolling captures; record displays or windows; edit locally; run OCR and QR actions; pick colors; preview the camera.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">03</span>
+            <h3>Windows &amp; input</h3>
+            <p>Arrange halves, thirds, corners, and displays; snap at screen edges; switch exact windows; drag from anywhere; tune mouse and keyboard behavior.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">04</span>
+            <h3>Clipboard &amp; files</h3>
+            <p>Search opt-in history, expand snippets, strip tracking links, paste plain text, add Finder shortcuts, and park files on a move-later shelf.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">05</span>
+            <h3>Notes</h3>
+            <p>Keep named Markdown scratchpads close, move between focused tabs, and automatically clear sensitive working notes after a quiet period.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">06</span>
+            <h3>Maintain</h3>
+            <p>Review apps and leftovers before Trash, find large downloads and caches, manage Homebrew and app updates, and convert images or edit video.</p>
+          </article>
+          <article class="toolkit-row reveal">
+            <span class="toolkit-row__number">07</span>
+            <h3>Power &amp; displays</h3>
+            <p>Keep the Mac or display awake on demand or by rule, adjust supported hardware brightness, apply reversible software dimming, and lock input for cleaning.</p>
+          </article>
+        </div>
+
+        <div class="surface-strip reveal" aria-label="Ways to access MacScope tools">
+          <p>Reach the same tools your way</p>
+          <ul>
+            <li>Command Bar</li>
+            <li>Quick Panel</li>
+            <li>Radial launcher</li>
+            <li>Global shortcuts</li>
+            <li>Local MCP server</li>
+          </ul>
+        </div>
+      </section>
+
       <section class="features section" id="features" aria-labelledby="features-title">
         <figure class="app-frame app-frame--features reveal-media" data-tilt>
           <img
@@ -229,10 +292,10 @@
         </figure>
 
         <div class="features__copy section-copy">
-          <p class="section-index reveal">04 / CONTROL</p>
+          <p class="section-index reveal">05 / CONTROL</p>
           <h2 id="features-title" class="reveal">Your Mac,<br />on your terms.</h2>
           <p class="section-intro reveal">
-            Discover more than 200 hidden and useful macOS controls, with exact-value undo and
+            Explore 226 hidden and useful macOS controls, with exact-value undo and
             clear safety states.
           </p>
           <dl class="control-list">
@@ -262,7 +325,8 @@
           <path d="M-30 96C210 120 279 217 173 297 67 377 265 459 588 389c346-76 592-43 1044 159" />
         </svg>
         <div class="final-cta__inner">
-          <p class="section-index reveal">05 / MACSCOPE</p>
+          <img class="final-cta__icon reveal" src="assets/macscope-app-icon.png" alt="" />
+          <p class="section-index reveal">06 / MACSCOPE</p>
           <h2 id="cta-title" class="reveal">Know more. Reach less.</h2>
           <p class="reveal">
             The system monitor and the toolbox, together in one fast, private, native app.
@@ -282,11 +346,7 @@
 
     <footer class="site-footer">
       <a class="brand" href="#top" aria-label="Back to top">
-        <svg class="brand__mark" viewBox="0 0 36 36" aria-hidden="true">
-          <path d="M5 24.5 10.3 16l5.2 5.2L21.6 9 31 14.4" />
-          <circle cx="5" cy="24.5" r="2.2" />
-          <circle cx="31" cy="14.4" r="2.2" />
-        </svg>
+        <img class="brand__mark" src="assets/macscope-app-icon.png" alt="" />
         <span>MacScope</span>
       </a>
       <nav aria-label="Footer navigation">

@@ -214,12 +214,11 @@ img {
 }
 
 .brand__mark {
-  width: 1.7rem;
-  fill: var(--blue);
-  stroke: var(--blue-2);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.1;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.48rem;
+  object-fit: cover;
+  box-shadow: 0 0.45rem 1.2rem rgba(9, 96, 210, 0.24);
 }
 
 .site-nav {
@@ -323,6 +322,15 @@ img {
   align-self: center;
   min-width: 0;
   padding-top: 1rem;
+}
+
+.hero__icon {
+  width: 5.4rem;
+  height: 5.4rem;
+  margin: 0 0 1.7rem;
+  border-radius: 1.28rem;
+  object-fit: cover;
+  box-shadow: 0 1.1rem 3.5rem rgba(0, 95, 214, 0.3);
 }
 
 .hero h1 {
@@ -857,6 +865,97 @@ img {
   transform: perspective(1600px) rotateX(2.2deg);
 }
 
+.toolkit {
+  min-height: 100svh;
+  border-top: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(5, 13, 23, 0.96) 0 44%, rgba(3, 8, 14, 0.7) 44%),
+    radial-gradient(circle at 82% 34%, rgba(22, 135, 255, 0.12), transparent 32rem);
+}
+
+.toolkit__intro {
+  position: sticky;
+  top: 8rem;
+  float: left;
+  width: 38%;
+  max-width: 35rem;
+}
+
+.toolkit__intro h2 {
+  max-width: 10ch;
+}
+
+.toolkit__list {
+  width: 55%;
+  margin-left: auto;
+  border-top: 1px solid var(--line-bright);
+}
+
+.toolkit-row {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(8rem, 0.52fr) minmax(15rem, 1fr);
+  gap: clamp(1rem, 2vw, 2rem);
+  align-items: baseline;
+  padding: 1.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.toolkit-row__number {
+  color: var(--blue-2);
+  font: 0.63rem/1 var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.toolkit-row h3 {
+  margin: 0;
+  color: #eef5fd;
+  font-size: clamp(1.05rem, 1.35vw, 1.35rem);
+  font-weight: 620;
+  letter-spacing: -0.025em;
+}
+
+.toolkit-row p {
+  margin: 0;
+  color: #8995a3;
+  font-size: 0.86rem;
+  line-height: 1.58;
+}
+
+.surface-strip {
+  display: grid;
+  grid-template-columns: 38% 1fr;
+  clear: both;
+  gap: 7%;
+  padding-top: 5.5rem;
+}
+
+.surface-strip > p {
+  margin: 0;
+  color: #dfe9f4;
+  font-size: clamp(1.25rem, 2vw, 2rem);
+  font-weight: 620;
+  letter-spacing: -0.035em;
+}
+
+.surface-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.6rem;
+  margin: 0;
+  padding: 0;
+  color: #91a0af;
+  font: 0.69rem/1.5 var(--font-mono);
+  list-style: none;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.surface-strip li::before {
+  margin-right: 0.55rem;
+  color: var(--green);
+  content: "•";
+}
+
 .features {
   display: grid;
   grid-template-columns: minmax(36rem, 1.38fr) minmax(18rem, 0.62fr);
@@ -963,6 +1062,15 @@ img {
 .final-cta__inner {
   position: relative;
   z-index: 2;
+}
+
+.final-cta__icon {
+  width: 6rem;
+  height: 6rem;
+  margin: 0 auto 1.8rem;
+  border-radius: 1.4rem;
+  object-fit: cover;
+  box-shadow: 0 1.2rem 4rem rgba(4, 104, 232, 0.28);
 }
 
 .final-cta h2 {
@@ -1107,6 +1215,14 @@ img {
   }
 
   .app-frame--process { width: 92vw; margin-right: -10vw; }
+  .toolkit {
+    background:
+      linear-gradient(180deg, rgba(5, 13, 23, 0.96), rgba(3, 8, 14, 0.76)),
+      radial-gradient(circle at 82% 34%, rgba(22, 135, 255, 0.12), transparent 32rem);
+  }
+  .toolkit__intro { position: static; float: none; width: 100%; max-width: 43rem; }
+  .toolkit__list { width: 100%; margin-top: 4rem; }
+  .surface-strip { grid-template-columns: 1fr 1.45fr; gap: 3rem; }
   .features__copy { order: -1; margin-left: auto; }
   .app-frame--features { width: 92vw; margin-left: -10vw; }
 }
@@ -1151,6 +1267,7 @@ img {
   }
 
   .hero__copy { width: 100%; }
+  .hero__icon { width: 4.6rem; height: 4.6rem; border-radius: 1.08rem; }
   .hero h1 { font-size: clamp(3.55rem, 16vw, 5.4rem); }
   .hero__lede { font-size: 1rem; }
   .hero__actions { align-items: stretch; }
@@ -1184,6 +1301,14 @@ img {
   .capability-note { align-items: flex-start; gap: 1rem; text-align: left; }
   .capability-note i { display: none; }
   .app-frame--utilities { width: 126vw; margin-left: -13vw; }
+
+  .toolkit-row {
+    grid-template-columns: 2rem 1fr;
+    gap: 0.75rem 1rem;
+    padding: 1.5rem 0;
+  }
+  .toolkit-row p { grid-column: 2; }
+  .surface-strip { grid-template-columns: 1fr; gap: 1.5rem; padding-top: 4rem; }
 
   .features__copy { margin-left: 0; }
   .app-frame--features { width: 126vw; margin: 0 0 0 -34vw; }

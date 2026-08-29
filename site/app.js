@@ -63,6 +63,7 @@ const capabilityCopy = {
   capture: "Screenshots, recordings, OCR, editing, and shareable local links.",
   windows: "Layouts, snapping, focus tools, and an exact-window switcher.",
   clipboard: "History, snippets, scratchpads, and a floating Finder shelf.",
+  notes: "Named Markdown scratchpads with quiet-period clearing.",
   maintenance: "App removal, storage cleanup, updates, and media conversion.",
   power: "Battery insight, keep-awake control, and quiet-workflow tools.",
 };

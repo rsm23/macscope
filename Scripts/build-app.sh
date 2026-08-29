@@ -17,6 +17,7 @@ bin_dir="$(swift build -c "$configuration" --arch "$architecture" --show-bin-pat
 rm -rf "$app_dir"
 mkdir -p "$contents_dir/MacOS" "$contents_dir/Resources" "$contents_dir/Library/LaunchDaemons"
 cp "$root_dir/Resources/Info.plist" "$contents_dir/Info.plist"
+cp "$root_dir/Resources/AppIcon.icns" "$contents_dir/Resources/AppIcon.icns"
 cp "$bin_dir/MacScope" "$contents_dir/MacOS/MacScope"
 cp "$bin_dir/MacScopeHelper" "$contents_dir/Resources/MacScopeHelper"
 cp "$bin_dir/MacScopeMCPServer" "$contents_dir/Resources/MacScopeMCPServer"

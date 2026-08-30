@@ -17,13 +17,17 @@
 
 MacScope combines live system telemetry, safe process management, reversible macOS controls, and the utilities that usually require a collection of separate apps. It is written in Swift and SwiftUI for macOS 14 or newer and currently targets Apple silicon.
 
-> MacScope is under active development. Build it from source or use the development bundle produced by the packaging script. Deep telemetry and protected actions remain permission-gated by macOS.
+> MacScope is under active development. Download the signed release or build it from source. Deep telemetry and protected actions remain permission-gated by macOS.
 
 ## Download
 
-Public binary downloads are temporarily paused. The v0.1.0 prerelease is development-signed and does not pass Gatekeeper, so it should not be redistributed. Downloads will resume with a Developer ID-signed, Apple-notarized release for Apple silicon on macOS 14 or newer.
+Download MacScope 0.1.0 for Apple-silicon Macs running macOS 14 or newer:
 
-Developers can continue to [build MacScope from source](#build-and-test) for local testing.
+- [Download the drag-to-Applications DMG](https://github.com/rsm23/macscope/releases/download/v0.1.0/MacScope-0.1.0-arm64.dmg)
+- [Verify its SHA-256 checksum](https://github.com/rsm23/macscope/releases/download/v0.1.0/MacScope-0.1.0-arm64.dmg.sha256)
+- [Download the ZIP archive](https://github.com/rsm23/macscope/releases/download/v0.1.0/MacScope-0.1.0-arm64.zip)
+
+The release is signed with an Apple Developer ID, notarized by Apple, and stapled for offline Gatekeeper verification. Open the DMG and drag MacScope to Applications; no security bypass is required.
 
 ## At a glance
 
@@ -231,16 +235,26 @@ Open `Package.swift` or `MacScope.xcworkspace` in Xcode. The package contains th
 
 Development builds are ad-hoc signed. Set `DEVELOPER_ID_APPLICATION` to a Developer ID Application identity for release signing. Notarization credentials are intentionally excluded from the repository.
 
-For a local Developer ID release, copy `.env.example` to the ignored `.env`, add the Apple ID notarization values, install the certificate and its private key in Keychain, then run:
+For a local Developer ID release, install the certificate and its private key in Keychain. Store notarization credentials once in the login Keychain; `notarytool` prompts securely for the app-specific password:
 
 ```bash
-./Scripts/release-local.sh --preflight
-./Scripts/release-local.sh
+xcrun notarytool store-credentials MacScopeNotary \
+  --apple-id YOUR_APPLE_ID \
+  --team-id YOUR_TEAM_ID
 ```
 
-The release script parses only expected `.env` keys without executing the file, validates credentials with Apple, stores them under the `MacScopeNotary` Keychain profile, and selects the matching Team ID identity. It signs, notarizes, staples, and Gatekeeper-checks the app; then it signs, notarizes, staples, and Gatekeeper-checks the DMG before producing final SHA-256 checksums.
+Then run the Keychain-backed release without putting credentials in a file:
 
-GitHub Actions test every push and deploy the static landing page. Tag releases fail closed unless Developer ID signing and notarization are fully configured; no development-signed binary is published as a release.
+```bash
+NOTARY_KEYCHAIN_PROFILE=MacScopeNotary NOTARY_TEAM_ID=YOUR_TEAM_ID \
+  ./Scripts/release-local.sh --preflight
+NOTARY_KEYCHAIN_PROFILE=MacScopeNotary NOTARY_TEAM_ID=YOUR_TEAM_ID \
+  ./Scripts/release-local.sh
+```
+
+The release script validates the Keychain profile with Apple and selects the matching Team ID identity. It signs, notarizes, staples, and Gatekeeper-checks the app; then it signs, notarizes, staples, and Gatekeeper-checks the DMG before producing final SHA-256 checksums. An environment file is read only when `MACSCOPE_ENV_FILE` is explicitly set.
+
+GitHub Actions test every push and deploy the static landing page. The `Release MacScope` workflow can also be run manually and runs automatically for `v*` tags. It imports the Developer ID identity into an ephemeral keychain, signs and notarizes the app and DMG, verifies Gatekeeper, uploads the build artifacts, and publishes tag releases. The workflow fails closed if any signing or notarization secret is missing, so only verified Developer ID releases are published.
 
 ## Known boundaries
 

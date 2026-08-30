@@ -356,6 +356,7 @@ struct RadialMenuView: View {
         case .recording:
             model.selectedUtilityTab = .capture
             model.selectedSection = .utilities
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
         case .mediaControls:
             submenu = .media
@@ -392,12 +393,15 @@ struct RadialMenuView: View {
         case .clipboard:
             model.selectedUtilityTab = .clipboard
             model.selectedSection = .utilities
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
         case .storage:
             model.selectedSection = .storage
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
         case .utilities:
             model.selectedSection = .utilities
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
         }
         if action != .lockScreen { NSApp.activate(ignoringOtherApps: true) }

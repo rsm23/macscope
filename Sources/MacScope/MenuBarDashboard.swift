@@ -507,6 +507,7 @@ struct MenuBarPanel: View {
 
     private func showMainWindow(section: AppSection? = nil) {
         if let section { model.selectedSection = section }
+        ApplicationPresenceController.shared.mainWindowWillOpen()
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.async {

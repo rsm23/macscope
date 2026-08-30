@@ -321,6 +321,29 @@ import Testing
     #expect(inventory.processorCount > 0)
 }
 
+@Test func memoryAccountingExcludesReclaimableFileCacheFromUsedMemory() {
+    let gibibyte = UInt64(1_073_741_824)
+    let snapshot = MemoryAccounting.snapshot(
+        totalBytes: 64 * gibibyte,
+        pageSize: gibibyte,
+        pages: MemoryPageStatistics(
+            active: 24,
+            inactive: 23,
+            wired: 5,
+            compressed: 9,
+            fileBacked: 21,
+            speculative: 1,
+            free: 2
+        )
+    )
+
+    // Speculative pages overlap both free and file-backed counters, so the
+    // independently worked result is 64 - 2 - 21 + 1 = 42 GiB used.
+    #expect(snapshot.used == 42 * gibibyte)
+    #expect(snapshot.cached == 21 * gibibyte)
+    #expect(snapshot.free == 2 * gibibyte)
+}
+
 @Test func processTerminationPreflightRejectsStalePIDIdentity() async throws {
     let currentPID = getpid()
     let process = try #require(try await ProcessCollector().sample().first { $0.pid == currentPID })

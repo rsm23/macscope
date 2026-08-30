@@ -439,11 +439,13 @@ struct CommandBarView: View {
         switch item {
         case .section(let section):
             model.selectedSection = section
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         case .utility(let tab):
             model.selectedUtilityTab = tab
             model.selectedSection = .utilities
+            ApplicationPresenceController.shared.mainWindowWillOpen()
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         case .application(let app):

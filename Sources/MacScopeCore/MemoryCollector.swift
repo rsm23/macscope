@@ -1,6 +1,61 @@
 import Darwin
 import Foundation
 
+struct MemoryPageStatistics: Sendable {
+    let active: UInt64
+    let inactive: UInt64
+    let wired: UInt64
+    let compressed: UInt64
+    let fileBacked: UInt64
+    let speculative: UInt64
+    let free: UInt64
+}
+
+enum MemoryAccounting {
+    static func snapshot(
+        totalBytes: UInt64,
+        pageSize: UInt64,
+        pages: MemoryPageStatistics
+    ) -> MemorySnapshot {
+        func bytes(_ pageCount: UInt64) -> UInt64 {
+            let result = pageCount.multipliedReportingOverflow(by: pageSize)
+            return result.overflow ? UInt64.max : result.partialValue
+        }
+
+        let active = bytes(pages.active)
+        let inactive = bytes(pages.inactive)
+        let wired = bytes(pages.wired)
+        let compressed = bytes(pages.compressed)
+        let cached = bytes(pages.fileBacked)
+        let speculative = min(bytes(pages.speculative), cached)
+        let free = bytes(pages.free)
+
+        // XNU includes speculative pages in both free_count and
+        // external_page_count. Count that overlap once when deriving the
+        // reclaimable pool, then exclude the pool from user-facing used RAM.
+        let fileCacheNotAlreadyFree = cached - speculative
+        let reclaimable = min(totalBytes, free.addingClamped(fileCacheNotAlreadyFree))
+
+        var snapshot = MemorySnapshot()
+        snapshot.total = totalBytes
+        snapshot.active = active
+        snapshot.inactive = inactive
+        snapshot.wired = wired
+        snapshot.compressed = compressed
+        snapshot.cached = cached
+        snapshot.free = free
+        snapshot.used = totalBytes - reclaimable
+        return snapshot
+    }
+}
+
+private extension UInt64 {
+    func addingClamped(_ other: UInt64) -> UInt64 {
+        let result = addingReportingOverflow(other)
+        return result.overflow ? UInt64.max : result.partialValue
+    }
+}
+
 public actor MemoryCollector: Collector {
     public let id = "memory"
 
@@ -31,12 +86,6 @@ public actor MemoryCollector: Collector {
         }
 
         let page = UInt64(pageSize)
-        let active = UInt64(statistics.active_count) * page
-        let inactive = UInt64(statistics.inactive_count) * page
-        let wired = UInt64(statistics.wire_count) * page
-        let compressed = UInt64(statistics.compressor_page_count) * page
-        let cached = UInt64(statistics.speculative_count) * page
-        let free = UInt64(statistics.free_count) * page
         let total = ProcessInfo.processInfo.physicalMemory
 
         var swap = xsw_usage()
@@ -45,15 +94,19 @@ public actor MemoryCollector: Collector {
             sysctlbyname("vm.swapusage", pointer, &swapSize, nil, 0)
         }
 
-        var snapshot = MemorySnapshot()
-        snapshot.total = total
-        snapshot.active = active
-        snapshot.inactive = inactive
-        snapshot.wired = wired
-        snapshot.compressed = compressed
-        snapshot.cached = cached
-        snapshot.free = free
-        snapshot.used = min(total, active &+ inactive &+ wired &+ compressed)
+        var snapshot = MemoryAccounting.snapshot(
+            totalBytes: total,
+            pageSize: page,
+            pages: MemoryPageStatistics(
+                active: UInt64(statistics.active_count),
+                inactive: UInt64(statistics.inactive_count),
+                wired: UInt64(statistics.wire_count),
+                compressed: UInt64(statistics.compressor_page_count),
+                fileBacked: UInt64(statistics.external_page_count),
+                speculative: UInt64(statistics.speculative_count),
+                free: UInt64(statistics.free_count)
+            )
+        )
         if swapResult == 0 {
             snapshot.swapUsed = UInt64(max(swap.xsu_used, 0))
             snapshot.swapTotal = UInt64(max(swap.xsu_total, 0))

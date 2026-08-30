@@ -681,11 +681,15 @@ private struct MemoryCompositionGraphic: View {
     }
 
     private var segments: [DistributionSegment] {
-        [
-            DistributionSegment(id: "active", label: "Active (GiB)", value: gibibytes(memory.active), tint: MacScopeTheme.accent),
-            DistributionSegment(id: "inactive", label: "Inactive (GiB)", value: gibibytes(memory.inactive), tint: MacScopeTheme.cyan),
-            DistributionSegment(id: "wired", label: "Wired (GiB)", value: gibibytes(memory.wired), tint: .orange),
-            DistributionSegment(id: "compressed", label: "Compressed (GiB)", value: gibibytes(memory.compressed), tint: .purple)
+        let usedAndFree = memory.used.addingReportingOverflow(memory.free)
+        let reclaimableFileCache = usedAndFree.overflow || usedAndFree.partialValue >= memory.total
+            ? 0
+            : memory.total - usedAndFree.partialValue
+
+        return [
+            DistributionSegment(id: "used", label: "Used (GiB)", value: gibibytes(memory.used), tint: MacScopeTheme.accent),
+            DistributionSegment(id: "file-cache", label: "File cache (GiB)", value: gibibytes(reclaimableFileCache), tint: MacScopeTheme.cyan),
+            DistributionSegment(id: "free", label: "Free (GiB)", value: gibibytes(memory.free), tint: .secondary)
         ]
     }
 
@@ -727,13 +731,13 @@ private struct MemoryCompositionGraphic: View {
                 .frame(maxWidth: .infinity)
 
                 VisualPanel(
-                    title: "Reported used-memory composition",
-                    subtitle: "VM counters that contribute to the reported used value",
+                    title: "Physical memory composition",
+                    subtitle: "Used RAM, reclaimable file cache, and free memory",
                     availability: memory.total > 0 ? .available : .unsupported,
                     height: SectionRowLayout.memoryPanelHeight
                 ) {
                     MetricDistributionBar(segments: segments, height: 28, showsLegend: true)
-                    Text("Cached and free counters are shown separately because they are not additive partitions of used memory.")
+                    Text("The Cached card includes speculative file pages that macOS also counts as free; this chart removes that overlap.")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

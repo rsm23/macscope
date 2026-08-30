@@ -88,6 +88,7 @@ private final class GlobalHotKeyManager {
 
 @MainActor
 final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
+    var showMainWindow: (() -> Void)?
     var showDockPreview: (() -> Void)?
     var showCommandBar: (() -> Void)?
     var showAppSwitcher: (() -> Void)?
@@ -226,7 +227,7 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        showDockPreview?()
+        showMainWindow?()
         return false
     }
 }
@@ -248,7 +249,8 @@ struct MacScopeApp: App {
                 .tint(MacScopeTheme.accent)
                 .preferredColorScheme(preferredColorScheme)
                 .task { model.startAutomaticallyIfNeeded() }
-                .background(DockPreviewBridge(delegate: appDelegate, model: model))
+                .onAppear { ApplicationPresenceController.shared.mainWindowWillOpen() }
+                .onDisappear { ApplicationPresenceController.shared.mainWindowDidClose() }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -320,6 +322,7 @@ struct MacScopeApp: App {
                 .preferredColorScheme(preferredColorScheme)
         } label: {
             MenuBarStatusLabel(presentation: model.menuBarPresentation)
+                .background(DockPreviewBridge(delegate: appDelegate, model: model))
         }
         .menuBarExtraStyle(.window)
 
@@ -342,6 +345,11 @@ private struct DockPreviewBridge: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
             .onAppear {
+                delegate.showMainWindow = {
+                    ApplicationPresenceController.shared.mainWindowWillOpen()
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
                 delegate.showDockPreview = {
                     openWindow(id: "dock-preview")
                     NSApp.activate(ignoringOtherApps: true)

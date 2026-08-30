@@ -38,7 +38,7 @@ The release is signed with an Apple Developer ID, notarized by Apple, and staple
 | Utility suite | Sound, Capture, Windows, Clipboard, Notes, Maintain, and Power workspaces |
 | macOS controls | 226 catalog entries: 106 direct controls, 114 System Settings guides, and 6 intentionally restricted actions |
 | Fast access | Menu-bar monitor, Quick Panel, Command Bar, radial launcher, app/window switcher, file shelf, and global shortcuts |
-| Agent access | Local stdio MCP server with redacted reads, 88 typed utility actions, explicit write modes, and no arbitrary shell execution |
+| Agent access | Local stdio MCP server with redacted reads, 89 typed utility actions, explicit write modes, and no arbitrary shell execution |
 
 ## System monitoring
 
@@ -191,11 +191,19 @@ MacScope currently ships 226 categorized entries across appearance, Finder, Dock
 
 ## Local MCP server
 
-MacScope bundles a local stdio Model Context Protocol server for AI agents. It exposes redacted telemetry, the macOS feature catalog, live utility state, 88 allowlisted utility actions, and bounded screenshot/recording artifact access.
+MacScope bundles a local stdio Model Context Protocol server for AI agents. It exposes redacted telemetry, the macOS feature catalog, live utility state, 89 allowlisted utility actions, and bounded screenshot/recording artifact access.
 
 The server starts read-only. Sensitive reads, feature writes, utility writes, and artifact bytes each require explicit launch flags. Feature changes use expiring preflight tokens, exact confirmation, and stale-state-safe undo. Utility calls accept only compiled action IDs and typed arguments; the server does not accept arbitrary shell commands, executable paths, preference domains, or keys.
 
 Setup, client examples, permission modes, resources, tools, and the complete action catalog are documented in [docs/MCP_SERVER.md](docs/MCP_SERVER.md).
+
+## Remote mobile apps
+
+The native Expo app provides paired iPhone and Android access through the outbound-only Cloudflare relay. The checked-in production configuration uses `https://macscope-remote.macscope-relay.workers.dev`, and the mobile project is linked to `@rsm23/macscope-remote` on EAS. Pairing is single-use and expires after ten minutes; live telemetry and command arguments are not stored by the relay.
+
+The mobile app includes detailed live metrics, searchable running processes with PID-safe termination, question-driven settings for every remote utility, inline command results, and a Library for screenshots, recordings, and clipboard content. Screenshot and recording files are streamed directly from the Mac in bounded chunks and are never persisted by the relay.
+
+Run `pnpm test`, `pnpm check`, and `pnpm lint` from `mobile/`, or manually dispatch **Mobile CI and EAS Builds** in GitHub Actions after adding the `EXPO_TOKEN` repository secret. The complete deployment, pairing, security, and build instructions are in [docs/REMOTE_CONTROL.md](docs/REMOTE_CONTROL.md).
 
 ## Security and privacy
 
@@ -254,7 +262,7 @@ NOTARY_KEYCHAIN_PROFILE=MacScopeNotary NOTARY_TEAM_ID=YOUR_TEAM_ID \
 
 The release script validates the Keychain profile with Apple and selects the matching Team ID identity. It signs, notarizes, staples, and Gatekeeper-checks the app; then it signs, notarizes, staples, and Gatekeeper-checks the DMG before producing final SHA-256 checksums. An environment file is read only when `MACSCOPE_ENV_FILE` is explicitly set.
 
-GitHub Actions test every push and deploy the static landing page. The `Release MacScope` workflow can also be run manually and runs automatically for `v*` tags. It imports the Developer ID identity into an ephemeral keychain, signs and notarizes the app and DMG, verifies Gatekeeper, uploads the build artifacts, and publishes tag releases. The workflow fails closed if any signing or notarization secret is missing, so only verified Developer ID releases are published.
+GitHub Actions test every push, validate mobile changes, and deploy the static landing page. The manually dispatched mobile workflow starts the Android APK and iOS Simulator EAS builds when `EXPO_TOKEN` is configured. The `Release MacScope` workflow can also be run manually and runs automatically for `v*` tags. It imports the Developer ID identity into an ephemeral keychain, signs and notarizes the app and DMG, verifies Gatekeeper, uploads the build artifacts, and publishes tag releases. The workflow fails closed if any signing or notarization secret is missing, so only verified Developer ID releases are published.
 
 ## Known boundaries
 

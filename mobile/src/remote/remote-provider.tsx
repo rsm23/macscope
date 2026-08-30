@@ -2,28 +2,35 @@ import NetInfo from "@react-native-community/netinfo";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
+import { Directory, EncodingType, File, Paths } from "expo-file-system";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { RemoteApi } from "./api";
+import { RemoteApi, RemoteApiError } from "./api";
 import { remoteStorage } from "./storage";
 import { reconnectDelay } from "./security";
 import { notificationTarget } from "./notification-routing";
+import { newUUID } from "./ids";
 import { webSocketURL } from "./urls";
 import type {
   AuditEvent,
+  ArtifactChunk,
+  ArtifactDownload,
   CommandResult,
   ConnectionState,
   EnvironmentSummary,
   MetricFrame,
+  LiveDataDocument,
   NotificationPreferences,
   PreparedCommand,
   Presence,
   RemoteFeature,
+  RemoteArtifact,
   RemoteMember,
   RemoteRole,
   StoredEnvironment,
+  SnapshotSection,
   UtilityAction,
   WireEnvelope,
 } from "./types";
@@ -41,6 +48,7 @@ interface RemoteContextValue {
   environments: StoredEnvironment[];
   activeEnvironment?: StoredEnvironment;
   connection: ConnectionState;
+  macOnline: boolean;
   error?: string;
   presence?: Presence;
   metric?: MetricFrame;
@@ -50,6 +58,11 @@ interface RemoteContextValue {
   members: RemoteMember[];
   audit: AuditEvent[];
   commandResults: CommandResult[];
+  pairingRepairRequired: boolean;
+  utilityStates: Record<string, unknown>;
+  artifacts: RemoteArtifact[];
+  artifactDownloads: Record<string, ArtifactDownload>;
+  liveData: Partial<Record<SnapshotSection, unknown>>;
   notifications: NotificationPreferences;
   pair(pairingURL: string, displayName: string): Promise<void>;
   removeEnvironment(environmentID: string): Promise<void>;
@@ -60,6 +73,10 @@ interface RemoteContextValue {
   revokeMember(memberID: string): Promise<void>;
   refreshSummary(): Promise<void>;
   setNotifications(value: NotificationPreferences): Promise<void>;
+  refreshUtilityState(module: string): Promise<unknown>;
+  refreshArtifacts(kind?: RemoteArtifact["kind"]): Promise<RemoteArtifact[]>;
+  downloadArtifact(artifact: RemoteArtifact): Promise<string>;
+  refreshLiveData(sections: SnapshotSection[], options?: { processLimit?: number; processQuery?: string; collectionLimit?: number }): Promise<LiveDataDocument>;
 }
 
 const RemoteContext = createContext<RemoteContextValue | null>(null);
@@ -82,6 +99,11 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   const [members, setMembers] = useState<RemoteMember[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [commandResults, setCommandResults] = useState<CommandResult[]>([]);
+  const [pairingRepairRequired, setPairingRepairRequired] = useState(false);
+  const [utilityStates, setUtilityStates] = useState<Record<string, unknown>>({});
+  const [artifacts, setArtifacts] = useState<RemoteArtifact[]>([]);
+  const [artifactDownloads, setArtifactDownloads] = useState<Record<string, ArtifactDownload>>({});
+  const [liveData, setLiveData] = useState<Partial<Record<SnapshotSection, unknown>>>({});
   const [notifications, setNotificationState] = useState<NotificationPreferences>({
     alerts: true,
     presence: true,
@@ -96,15 +118,20 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   const pendingResolvers = useRef(
     new Map<string, { resolve: (value: PreparedCommand) => void; reject: (reason: Error) => void; timeout: ReturnType<typeof setTimeout> }>(),
   );
+  const stateResolvers = useRef(new Map<string, PendingResolver<unknown>>());
+  const artifactListResolvers = useRef(new Map<string, PendingResolver<RemoteArtifact[]>>());
+  const artifactChunkResolvers = useRef(new Map<string, PendingResolver<ArtifactChunk>>());
+  const snapshotResolvers = useRef(new Map<string, PendingResolver<LiveDataDocument>>());
 
   const activeEnvironment = environments.find((value) => value.environmentID === activeID);
+  const macOnline = connection === "online" && presence?.online === true;
 
   const saveUpdatedEnvironment = useCallback(async (environment: StoredEnvironment) => {
     await remoteStorage.saveEnvironment(environment);
     setEnvironments((values) => values.map((value) => (value.environmentID === environment.environmentID ? environment : value)));
   }, []);
 
-  const send = useCallback((kind: string, payload: Record<string, unknown> | unknown[], id = newID()) => {
+  const send = useCallback((kind: string, payload: Record<string, unknown> | unknown[], id = newUUID()) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("The Mac is offline. Nothing was queued.");
     const envelope: WireEnvelope = {
@@ -155,12 +182,34 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       case "utility_catalog":
         setUtilities(envelope.payload as unknown as UtilityAction[]);
         break;
+      case "utility_state": {
+        const payload = envelope.payload as Record<string, unknown>;
+        const module = String(payload.module ?? "");
+        if (module) setUtilityStates((values) => ({ ...values, [module]: payload.state }));
+        settleResolver(stateResolvers.current, envelope.id, payload.state);
+        break;
+      }
+      case "artifact_list": {
+        const values = envelope.payload as unknown as RemoteArtifact[];
+        setArtifacts(values);
+        settleResolver(artifactListResolvers.current, envelope.id, values);
+        break;
+      }
+      case "artifact_chunk":
+        settleResolver(artifactChunkResolvers.current, envelope.id, envelope.payload as unknown as ArtifactChunk);
+        break;
+      case "snapshot": {
+        const document = envelope.payload as unknown as LiveDataDocument;
+        setLiveData((values) => ({ ...values, ...document.data }));
+        settleResolver(snapshotResolvers.current, envelope.id, document);
+        break;
+      }
       case "command_prepared": {
         const prepared = normalizePrepared(envelope.payload as Record<string, unknown>);
-        const resolver = pendingResolvers.current.get(envelope.id);
+        const resolver = pendingResolvers.current.get(envelope.id.toLowerCase());
         if (resolver) {
           clearTimeout(resolver.timeout);
-          pendingResolvers.current.delete(envelope.id);
+          pendingResolvers.current.delete(envelope.id.toLowerCase());
           resolver.resolve(prepared);
         }
         break;
@@ -174,12 +223,16 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       case "error": {
         const payload = envelope.payload as Record<string, unknown>;
         const message = String(payload.message ?? "The remote request failed.");
-        const resolver = pendingResolvers.current.get(envelope.id);
+        const resolver = pendingResolvers.current.get(envelope.id.toLowerCase());
         if (resolver) {
           clearTimeout(resolver.timeout);
-          pendingResolvers.current.delete(envelope.id);
+          pendingResolvers.current.delete(envelope.id.toLowerCase());
           resolver.reject(new Error(message));
         }
+        rejectResolver(stateResolvers.current, envelope.id, message);
+        rejectResolver(artifactListResolvers.current, envelope.id, message);
+        rejectResolver(artifactChunkResolvers.current, envelope.id, message);
+        rejectResolver(snapshotResolvers.current, envelope.id, message);
         setError(message);
         break;
       }
@@ -197,6 +250,10 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       pending.reject(new Error("The live connection closed before the Mac responded."));
     }
     pendingResolvers.current.clear();
+    rejectResolvers(stateResolvers.current, "The live connection closed before the Mac responded.");
+    rejectResolvers(artifactListResolvers.current, "The live connection closed before the Mac responded.");
+    rejectResolvers(artifactChunkResolvers.current, "The live connection closed before the Mac responded.");
+    rejectResolvers(snapshotResolvers.current, "The live connection closed before the Mac responded.");
   }, []);
 
   const connect = useCallback(async (environment: StoredEnvironment) => {
@@ -204,6 +261,7 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     if (!shouldConnect.current) return;
     setConnection(reconnectAttempt.current > 0 ? "reconnecting" : "connecting");
     setError(undefined);
+    setPairingRepairRequired(false);
     const api = new RemoteApi(environment, async (tokens) => {
       const updated = { ...environment, ...tokens };
       await saveUpdatedEnvironment(updated);
@@ -215,6 +273,10 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       const socket = new WebSocket(webSocketURL(environment.relayURL, ticket.ticket));
       socketRef.current = socket;
       socket.onopen = () => {
+        if (socketRef.current !== socket) {
+          socket.close(1000, "Superseded connection");
+          return;
+        }
         reconnectAttempt.current = 0;
         setConnection("online");
         setError(undefined);
@@ -235,12 +297,15 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
           reconnectTimer.current = setTimeout(() => connectRef.current(environment), delay);
         } else if (event.code === 4003) {
           setError("This device session was revoked.");
+          setPairingRepairRequired(true);
         }
       };
     } catch (reason) {
       setConnection("error");
       setError(reason instanceof Error ? reason.message : "Could not connect to MacScope.");
-      if (shouldConnect.current) {
+      const repairRequired = reason instanceof RemoteApiError && reason.status === 401 && reason.code === "invalid_refresh";
+      setPairingRepairRequired(repairRequired);
+      if (shouldConnect.current && !repairRequired) {
         reconnectAttempt.current += 1;
         const delay = reconnectDelay(reconnectAttempt.current);
         reconnectTimer.current = setTimeout(() => connectRef.current(environment), delay);
@@ -326,6 +391,7 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       pushToken: await pushToken().catch(() => undefined),
     });
     await remoteStorage.saveEnvironment(environment);
+    setPairingRepairRequired(false);
     setEnvironments((values) => [...values.filter((value) => value.environmentID !== environment.environmentID), environment]);
     setActiveID(environment.environmentID);
   }, []);
@@ -337,6 +403,7 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     if (environmentID === activeID) {
       setActiveID(next[0]?.environmentID);
       if (!next[0]) setConnection("offline");
+      setPairingRepairRequired(false);
     }
   }, [activeID, environments]);
 
@@ -350,9 +417,9 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const prepareCommand = useCallback((actionID: string, args: Record<string, unknown> = {}) => {
-    if (connection !== "online") return Promise.reject(new Error("The Mac is offline. Nothing was queued."));
-    const commandID = newID();
-    const envelopeID = newID();
+    if (!macOnline) return Promise.reject(new Error("The Mac is offline. Nothing was queued."));
+    const commandID = newUUID();
+    const envelopeID = newUUID();
     return new Promise<PreparedCommand>((resolve, reject) => {
       const timeout = setTimeout(() => {
         pendingResolvers.current.delete(envelopeID);
@@ -375,7 +442,7 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
         reject(reason);
       }
     });
-  }, [activeEnvironment, connection, send]);
+  }, [activeEnvironment, macOnline, send]);
 
   const applyCommand = useCallback(async (command: PreparedCommand) => {
     if (new Date(command.expiresAt).getTime() <= Date.now()) throw new Error("The approval expired. Prepare the action again.");
@@ -406,10 +473,84 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     await apiRef.current.updatePush(await pushToken().catch(() => undefined), value);
   }, [activeID]);
 
+  const requestUtilityState = useCallback((module: string) => requestReply(
+    stateResolvers.current,
+    send,
+    "utility_state_request",
+    { module },
+  ), [send]);
+
+  const refreshUtilityState = useCallback(async (module: string) => {
+    const state = await requestUtilityState(module);
+    setUtilityStates((values) => ({ ...values, [module]: state }));
+    return state;
+  }, [requestUtilityState]);
+
+  const refreshArtifacts = useCallback(async (kind?: RemoteArtifact["kind"]) => {
+    const values = await requestReply(
+      artifactListResolvers.current,
+      send,
+      "artifact_list_request",
+      kind ? { kind } : {},
+    );
+    setArtifacts(values);
+    return values;
+  }, [send]);
+
+  const downloadArtifact = useCallback(async (artifact: RemoteArtifact) => {
+    const existing = artifactDownloads[artifact.id]?.uri;
+    if (existing) return existing;
+    setArtifactDownloads((values) => ({ ...values, [artifact.id]: { progress: 0, downloading: true } }));
+    try {
+      const directory = new Directory(Paths.cache, "macscope-remote-artifacts");
+      if (!directory.exists) directory.create({ intermediates: true });
+      const safeName = artifact.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const file = new File(directory, `${artifact.id.slice(0, 12)}-${safeName}`);
+      if (file.exists) file.delete();
+      file.create({ intermediates: true });
+      let offset = 0;
+      while (offset < artifact.byteCount) {
+        const chunk = await requestReply(
+          artifactChunkResolvers.current,
+          send,
+          "artifact_read_request",
+          { id: artifact.id, offset, length: 32 * 1024 },
+          20_000,
+        );
+        file.write(chunk.base64, { encoding: EncodingType.Base64, append: offset > 0 });
+        offset += chunk.byteCount;
+        setArtifactDownloads((values) => ({
+          ...values,
+          [artifact.id]: { progress: Math.min(offset / Math.max(artifact.byteCount, 1), 1), downloading: !chunk.endOfFile },
+        }));
+        if (chunk.endOfFile || chunk.byteCount === 0) break;
+      }
+      setArtifactDownloads((values) => ({ ...values, [artifact.id]: { uri: file.uri, progress: 1, downloading: false } }));
+      return file.uri;
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "The artifact could not be downloaded.";
+      setArtifactDownloads((values) => ({ ...values, [artifact.id]: { progress: 0, downloading: false, error: message } }));
+      throw reason;
+    }
+  }, [artifactDownloads, send]);
+
+  const refreshLiveData = useCallback(async (sections: SnapshotSection[], options: { processLimit?: number; processQuery?: string; collectionLimit?: number } = {}) => {
+    const document = await requestReply(
+      snapshotResolvers.current,
+      send,
+      "snapshot_request",
+      { sections, processLimit: options.processLimit ?? 100, collectionLimit: options.collectionLimit ?? 150, ...(options.processQuery ? { processQuery: options.processQuery } : {}) },
+      20_000,
+    );
+    setLiveData((values) => ({ ...values, ...document.data }));
+    return document;
+  }, [send]);
+
   const value = useMemo<RemoteContextValue>(() => ({
     environments,
     activeEnvironment,
     connection,
+    macOnline,
     error,
     presence,
     metric: metricHistory.at(-1),
@@ -419,6 +560,11 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     members,
     audit,
     commandResults,
+    pairingRepairRequired,
+    utilityStates,
+    artifacts,
+    artifactDownloads,
+    liveData,
     notifications,
     pair,
     removeEnvironment,
@@ -429,13 +575,73 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     revokeMember,
     refreshSummary,
     setNotifications,
+    refreshUtilityState,
+    refreshArtifacts,
+    downloadArtifact,
+    refreshLiveData,
   }), [
-    environments, activeEnvironment, connection, error, presence, metricHistory, features, utilities,
-    members, audit, commandResults, notifications, pair, removeEnvironment, selectEnvironment,
+    environments, activeEnvironment, connection, macOnline, error, presence, metricHistory, features, utilities,
+    members, audit, commandResults, pairingRepairRequired, utilityStates, artifacts, artifactDownloads, liveData, notifications, pair, removeEnvironment, selectEnvironment,
     prepareCommand, applyCommand, createPairing, revokeMember, refreshSummary, setNotifications,
+    refreshUtilityState, refreshArtifacts, downloadArtifact, refreshLiveData,
   ]);
 
   return <RemoteContext value={value}>{children}</RemoteContext>;
+}
+
+interface PendingResolver<T> {
+  resolve(value: T): void;
+  reject(reason: Error): void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+function requestReply<T>(
+  resolvers: Map<string, PendingResolver<T>>,
+  send: (kind: string, payload: Record<string, unknown> | unknown[], id?: string) => void,
+  kind: string,
+  payload: Record<string, unknown>,
+  timeoutMilliseconds = 12_000,
+): Promise<T> {
+  const envelopeID = newUUID();
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      resolvers.delete(envelopeID);
+      reject(new Error("The Mac did not respond before the request expired."));
+    }, timeoutMilliseconds);
+    resolvers.set(envelopeID, { resolve, reject, timeout });
+    try { send(kind, payload, envelopeID); }
+    catch (reason) {
+      clearTimeout(timeout);
+      resolvers.delete(envelopeID);
+      reject(reason instanceof Error ? reason : new Error("The request could not be sent."));
+    }
+  });
+}
+
+function settleResolver<T>(resolvers: Map<string, PendingResolver<T>>, id: string, value: T): void {
+  const key = id.toLowerCase();
+  const resolver = resolvers.get(key);
+  if (!resolver) return;
+  clearTimeout(resolver.timeout);
+  resolvers.delete(key);
+  resolver.resolve(value);
+}
+
+function rejectResolver<T>(resolvers: Map<string, PendingResolver<T>>, id: string, message: string): void {
+  const key = id.toLowerCase();
+  const resolver = resolvers.get(key);
+  if (!resolver) return;
+  clearTimeout(resolver.timeout);
+  resolvers.delete(key);
+  resolver.reject(new Error(message));
+}
+
+function rejectResolvers<T>(resolvers: Map<string, PendingResolver<T>>, message: string): void {
+  for (const resolver of resolvers.values()) {
+    clearTimeout(resolver.timeout);
+    resolver.reject(new Error(message));
+  }
+  resolvers.clear();
 }
 
 async function pushToken(): Promise<string | undefined> {
@@ -457,7 +663,7 @@ async function pushToken(): Promise<string | undefined> {
 function normalizePrepared(payload: Record<string, unknown>): PreparedCommand {
   return {
     schemaVersion: 1,
-    commandID: String(payload.commandID),
+    commandID: String(payload.commandID).toLowerCase(),
     approvalToken: String(payload.approvalToken),
     actionID: String(payload.actionID ?? "macos.feature"),
     title: typeof payload.title === "string" ? payload.title : undefined,
@@ -473,9 +679,4 @@ function normalizePrepared(payload: Record<string, unknown>): PreparedCommand {
 
 function isRisk(value: unknown): value is PreparedCommand["risk"] {
   return value === "read_only" || value === "mutation" || value === "sensitive" || value === "destructive";
-}
-
-function newID(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }

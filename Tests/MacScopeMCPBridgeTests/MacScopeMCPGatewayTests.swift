@@ -13,8 +13,9 @@ struct MacScopeMCPGatewayTests {
         )
 
         let document = try await gateway.snapshot(.init(
-            sections: [.cpu, .processes, .hardware],
-            processLimit: 1
+            sections: [.cpu, .processes, .hardware, .metrics],
+            processLimit: 1,
+            collectionLimit: 1
         ))
         let json = try document.jsonString()
 
@@ -26,6 +27,10 @@ struct MacScopeMCPGatewayTests {
         #expect(json.contains("\"cpuUser\" : 12"))
         #expect(json.contains("\"totalProcesses\" : 2"))
         #expect(json.contains("\"returnedProcesses\" : 1"))
+        #expect(json.contains("\"metrics\" : 2"))
+        #expect(json.contains("\"returnedMetrics\" : 1"))
+        #expect(json.contains("metric.first"))
+        #expect(!json.contains("metric.second"))
     }
 
     @Test("Sensitive values require an explicit server capability")
@@ -164,7 +169,8 @@ struct MacScopeMCPGatewayTests {
             #expect(actions.contains { $0.module == module })
         }
         #expect(actions.contains { $0.id == "capture.screenshot" && $0.producesArtifact })
-        #expect(actions.contains { $0.id == "capture.recording-start" && $0.producesArtifact })
+        #expect(actions.contains { $0.id == "capture.recording-start" && !$0.producesArtifact })
+        #expect(actions.contains { $0.id == "capture.recording-stop" && $0.producesArtifact })
         #expect(actions.contains { $0.id == "clipboard.move-shelf-files" && $0.destructive })
     }
 
@@ -304,7 +310,11 @@ private actor FakeSnapshotSource: MacScopeMCPSnapshotSource {
                     startedAt: .now
                 )
             ],
-            inventory: inventory
+            inventory: inventory,
+            metrics: [
+                MetricSample(descriptorID: "metric.first", value: .number(1)),
+                MetricSample(descriptorID: "metric.second", value: .number(2))
+            ]
         )
     }
 }

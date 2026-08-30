@@ -42,6 +42,10 @@ public enum ProcessController {
     }
 
     public static func execute(_ request: ProcessActionRequest) async throws -> ActionResult {
+        try executeSynchronously(request)
+    }
+
+    public static func executeSynchronously(_ request: ProcessActionRequest) throws -> ActionResult {
         _ = try preflight(request)
         let result: Int32
         switch request.kind {

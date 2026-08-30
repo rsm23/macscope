@@ -4,12 +4,12 @@ compatibility_date = "2026-08-30"
 workers_dev = true
 
 [vars]
-PUBLIC_BASE_URL = "http://localhost:8787"
+PUBLIC_BASE_URL = "https://macscope-remote.macscope-relay.workers.dev"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "macscope-remote"
-database_id = "replace-with-cloudflare-d1-database-id"
+database_id = "6ff6685f-6515-4f4b-83c4-aefd1dc3d066"
 migrations_dir = "migrations"
 
 [[durable_objects.bindings]]

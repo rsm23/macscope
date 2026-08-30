@@ -47,7 +47,7 @@ export default function ConfirmScreen() {
       });
       await remote.applyCommand(command);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.dismiss();
+      router.replace({ pathname: "/command/[id]", params: { id: command.commandID, actionID: command.actionID } });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The command could not be applied.");
     } finally {
@@ -75,7 +75,7 @@ export default function ConfirmScreen() {
       </Card>
       {command.requiresDeviceAuthentication ? <Card><Text selectable style={{ color: theme.secondary, fontSize: 13 }}>This action requires Face ID, Touch ID, or the device credential before it is sent.</Text></Card> : null}
       {error ? <Text selectable style={{ color: palette.red }}>{error}</Text> : null}
-      <ActionButton title={busy ? "Applying…" : expired ? "Approval expired" : "Confirm and apply"} disabled={busy || expired || remote.connection !== "online"} destructive={command.risk === "destructive"} onPress={() => void apply()} />
+      <ActionButton title={busy ? "Applying…" : expired ? "Approval expired" : "Confirm and apply"} disabled={busy || expired || !remote.macOnline} destructive={command.risk === "destructive"} onPress={() => void apply()} />
     </ScrollView>
   );
 }

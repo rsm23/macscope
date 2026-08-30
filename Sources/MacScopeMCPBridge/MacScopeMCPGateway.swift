@@ -22,17 +22,20 @@ public struct MacScopeMCPSnapshotQuery: Sendable {
     public var includeSensitive: Bool
     public var processLimit: Int
     public var processQuery: String?
+    public var collectionLimit: Int
 
     public init(
         sections: [MacScopeMCPSnapshotSection] = [.summary],
         includeSensitive: Bool = false,
         processLimit: Int = 250,
-        processQuery: String? = nil
+        processQuery: String? = nil,
+        collectionLimit: Int = 250
     ) {
         self.sections = sections.isEmpty ? [.summary] : sections
         self.includeSensitive = includeSensitive
         self.processLimit = min(max(processLimit, 0), 5_000)
         self.processQuery = processQuery
+        self.collectionLimit = min(max(collectionLimit, 1), 5_000)
     }
 }
 
@@ -502,7 +505,7 @@ public actor MacScopeMCPGateway {
         } else {
             var sections: [String: MacScopeMCPJSONValue] = [:]
             for section in requested {
-                sections[section.rawValue] = sectionValue(section, snapshot: filteredSnapshot, root: root)
+                sections[section.rawValue] = sectionValue(section, snapshot: filteredSnapshot, root: root, collectionLimit: query.collectionLimit)
             }
             data = .object(sections)
         }
@@ -516,7 +519,11 @@ public actor MacScopeMCPGateway {
                 "totalProcesses": .integer(Int64(snapshot.processes.count)),
                 "returnedProcesses": .integer(Int64(filteredSnapshot.processes.count)),
                 "startupItems": .integer(Int64(snapshot.startupItems.count)),
-                "networkConnections": .integer(Int64(snapshot.connections.count))
+                "returnedStartupItems": .integer(Int64(min(snapshot.startupItems.count, query.collectionLimit))),
+                "networkConnections": .integer(Int64(snapshot.connections.count)),
+                "returnedNetworkConnections": .integer(Int64(min(snapshot.connections.count, query.collectionLimit))),
+                "metrics": .integer(Int64(snapshot.metrics.count)),
+                "returnedMetrics": .integer(Int64(min(snapshot.metrics.count, query.collectionLimit)))
             ]),
             "data": protectedData
         ])
@@ -559,10 +566,15 @@ public actor MacScopeMCPGateway {
     private func sectionValue(
         _ section: MacScopeMCPSnapshotSection,
         snapshot: SystemSnapshot,
-        root: [String: MacScopeMCPJSONValue]
+        root: [String: MacScopeMCPJSONValue],
+        collectionLimit: Int
     ) -> MacScopeMCPJSONValue {
         func values(_ keys: [String]) -> MacScopeMCPJSONValue {
             .object(keys.reduce(into: [:]) { result, key in result[key] = root[key] ?? .null })
+        }
+        func limitedArray(_ key: String) -> MacScopeMCPJSONValue {
+            guard case .array(let values)? = root[key] else { return .array([]) }
+            return .array(Array(values.prefix(collectionLimit)))
         }
         switch section {
         case .summary:
@@ -583,10 +595,10 @@ public actor MacScopeMCPGateway {
         case .cpu: return values(["timestamp", "cpuUsage", "cpuUser", "cpuSystem", "loadAverages", "cores"])
         case .memory: return root["memory"] ?? .object([:])
         case .battery: return root["battery"] ?? .object([:])
-        case .network: return values(["networks", "connections"])
+        case .network: return .object(["networks": root["networks"] ?? .array([]), "connections": limitedArray("connections")])
         case .storage: return values(["disks", "smartReports"])
         case .processes: return root["processes"] ?? .array([])
-        case .startup: return values(["startupItems", "startupRevision"])
+        case .startup: return .object(["startupItems": limitedArray("startupItems"), "startupRevision": root["startupRevision"] ?? .null])
         case .hardware: return root["inventory"] ?? .object([:])
         case .thermals:
             return .object([
@@ -598,7 +610,7 @@ public actor MacScopeMCPGateway {
             ])
         case .accelerators:
             return values(["deep"])
-        case .metrics: return root["metrics"] ?? .array([])
+        case .metrics: return limitedArray("metrics")
         case .all: return .object(root)
         }
     }

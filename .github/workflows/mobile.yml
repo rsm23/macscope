@@ -1,0 +1,79 @@
+name: Mobile CI and EAS Builds
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "Resources/AppIcon.png"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "Resources/AppIcon.png"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: mobile
+
+env:
+  EXPO_NO_DOTENV: "1"
+  EXPO_NO_CLIENT_ENV_VARS: "1"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm check
+      - run: pnpm lint
+      - run: pnpm dlx expo-doctor@latest
+
+  eas-build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            profile: preview
+          - platform: ios
+            profile: simulator
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Require Expo token
+        run: test -n "$EXPO_TOKEN"
+      - name: Start EAS build
+        run: pnpm dlx eas-cli@latest build --platform "${{ matrix.platform }}" --profile "${{ matrix.profile }}" --non-interactive --no-wait

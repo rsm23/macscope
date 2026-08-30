@@ -57,6 +57,13 @@ export default function SettingsScreen() {
       </Card>
       <Link href="/pair" asChild><Pressable><Text style={{ color: palette.cyan, textAlign: "center", fontWeight: "800" }}>＋ Pair another Mac</Text></Pressable></Link>
 
+      <SectionLabel>Mac controls</SectionLabel>
+      <Link href="/features" asChild>
+        <Pressable style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderRadius: 16, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ flex: 1, gap: 4 }}><Text style={{ color: theme.text, fontSize: 15, fontWeight: "800" }}>Features and preferences</Text><Text style={{ color: theme.secondary, fontSize: 12, lineHeight: 17 }}>Enable MacScope modules and supported macOS preferences.</Text></View><Text style={{ color: theme.secondary, fontSize: 26 }}>›</Text>
+        </Pressable>
+      </Link>
+
       <SectionLabel>Notifications</SectionLabel>
       <Card style={{ padding: 0, gap: 0, overflow: "hidden" }}>
         <ToggleRow title="Usage alerts" detail="Configured CPU, memory, and power thresholds." value={remote.notifications.alerts} onValue={(value) => setNotification("alerts", value)} divider />

@@ -19,3 +19,5 @@ Cloudflare Worker, D1, and hibernating Durable Object relay for MacScope Remote 
 6. Optionally set `EXPO_ACCESS_TOKEN` with `pnpm wrangler secret put EXPO_ACCESS_TOKEN` after enabling Expo push access-token security.
 
 The relay intentionally has no public account signup. Every member arrives through a single-use, ten-minute invitation created by the Mac or an owner.
+
+The current production endpoint is `https://macscope-remote.macscope-relay.workers.dev`; verify it with `curl https://macscope-remote.macscope-relay.workers.dev/health` after deployment.

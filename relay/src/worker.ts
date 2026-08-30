@@ -5,6 +5,7 @@ import {
   ProtocolError,
   authorizeMobileEnvelope,
   canManage,
+  normalizeEnvelopeIdentifiers,
   parseEnvelope,
   type ClientKind,
   type RemoteRisk,
@@ -514,7 +515,7 @@ export class EnvironmentRoom extends DurableObject<Env> {
       let identity = socket.deserializeAttachment() as SocketIdentity;
       identity = enforceSocketRate(identity);
       socket.serializeAttachment(identity);
-      const envelope = authorizeMobileEnvelope(parseEnvelope(message), identity);
+      const envelope = normalizeEnvelopeIdentifiers(authorizeMobileEnvelope(parseEnvelope(message), identity));
 
       if (identity.clientKind === "mobile") {
         if (envelope.kind === "subscribe_metrics") {
@@ -525,11 +526,14 @@ export class EnvironmentRoom extends DurableObject<Env> {
           socket.serializeAttachment(identity);
         }
         const macs = this.ctx.getWebSockets("mac");
-        if (macs.length === 0 && envelope.kind.startsWith("command_")) {
+        const requiresMac = envelope.kind.startsWith("command_") || ["utility_state_request", "artifact_list_request", "artifact_read_request", "snapshot_request"].includes(envelope.kind);
+        if (macs.length === 0 && requiresMac) {
           socket.send(JSON.stringify(errorEnvelope(envelope.id, "mac_offline", "The Mac is offline. Nothing was queued.")));
           return;
         }
-        if (envelope.kind === "command_prepare") {
+        if (["utility_state_request", "artifact_list_request", "artifact_read_request", "snapshot_request"].includes(envelope.kind)) {
+          await this.ctx.storage.put(`reply:${envelope.id}`, identity.principalID);
+        } else if (envelope.kind === "command_prepare") {
           const payload = envelope.payload as Record<string, unknown>;
           const commandID = String(payload.commandID ?? "");
           const actionID = String(payload.actionID ?? "");
@@ -585,6 +589,12 @@ export class EnvironmentRoom extends DurableObject<Env> {
         if (pending) this.sendToPrincipal(pending.memberID, envelope);
         await this.recordCommandResult(envelope, pending);
         await this.ctx.storage.delete([`command:${commandID}`, `reply:${envelope.id}`]);
+        return;
+      }
+      if (["utility_state", "artifact_list", "artifact_chunk", "snapshot"].includes(envelope.kind)) {
+        const memberID = await this.ctx.storage.get<string>(`reply:${envelope.id}`);
+        if (memberID) this.sendToPrincipal(memberID, envelope);
+        await this.ctx.storage.delete(`reply:${envelope.id}`);
         return;
       }
       if (envelope.kind === "error") {

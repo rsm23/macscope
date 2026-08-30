@@ -60,6 +60,21 @@ struct RemoteControlTests {
         }
     }
 
+    @Test("Wire decoding accepts JavaScript ISO timestamps with milliseconds")
+    func javascriptTimestampDecoding() throws {
+        let json = """
+        {"schemaVersion":1,"id":"00000000-0000-0000-0000-000000000001","kind":"command_prepare","sentAt":"2026-08-30T14:58:57.123Z","payload":{"schemaVersion":1,"commandID":"00000000-0000-0000-0000-000000000002","actorID":"member-1","role":"owner","actionID":"utility.sound.refresh","arguments":{},"expiresAt":"2026-08-30T14:59:12.456Z"}}
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let envelope = try decoder.decode(MacScopeRemoteWireEnvelopeV1.self, from: Data(json.utf8))
+        let requestData = try JSONEncoder().encode(envelope.payload)
+        let request = try decoder.decode(MacScopeRemoteCommandPrepareV1.self, from: requestData)
+
+        #expect(request.actionID == "utility.sound.refresh")
+    }
+
     @Test("Utility risk metadata defaults unknown mutations closed")
     func utilityRiskClassification() throws {
         #expect(try #require(MacScopeMCPUtilityCatalog.action(id: "sound.refresh")).remoteRisk == .readOnly)

@@ -115,6 +115,19 @@ struct RemoteSettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(expires > .now ? Color.secondary : Color.red)
                         }
+                        if remote.isRefreshingPairing {
+                            ProgressView("Generating a secure pairing code…")
+                                .controlSize(.small)
+                        } else if let error = remote.lastError, remote.pairingURL == nil {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if !enabled {
+                            Label("Enable remote access to create a pairing code.", systemImage: "info.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 8) { inviteButtons }
                             VStack(alignment: .leading, spacing: 8) { inviteButtons }
@@ -162,37 +175,41 @@ struct RemoteSettingsView: View {
             }
 
             SettingsSection(title: "Utility action allowlist") {
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(MacScopeMCPUtilityCatalog.actions.enumerated()), id: \.element.id) { index, action in
-                            Toggle(isOn: Binding(
-                                get: { allowedUtilityActions.contains(action.id) },
-                                set: { isAllowed in
-                                    if isAllowed { allowedUtilityActions.insert(action.id) }
-                                    else { allowedUtilityActions.remove(action.id) }
-                                    MacScopeRemoteControlClient.setAllowedUtilityActionIDs(allowedUtilityActions)
-                                    remote.publishSettingsChanged()
-                                }
-                            )) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(action.title).font(.callout.weight(.medium))
-                                    Text("\(action.module.rawValue) · \(action.remoteRisk.rawValue.replacingOccurrences(of: "_", with: " "))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 9)
-                            if index < MacScopeMCPUtilityCatalog.actions.count - 1 { SettingsDivider() }
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 12) {
+                        SettingsRowLabel(
+                            title: "Remote utility access",
+                            detail: "\(allowedUtilityActions.count) of \(MacScopeMCPUtilityCatalog.actions.count) actions selected. Choose whole categories, then review individual exceptions only when needed.",
+                            icon: "checklist.checked"
+                        )
+                        Spacer(minLength: 16)
+                        Button("Clear all", systemImage: "xmark.circle") {
+                            replaceAllowedUtilityActions(with: [])
                         }
+                        .disabled(allowedUtilityActions.isEmpty)
+                        .macScopeGlassButton()
+                        Button("Select all", systemImage: "checkmark.circle.fill") {
+                            replaceAllowedUtilityActions(with: Set(MacScopeMCPUtilityCatalog.actions.map(\.id)))
+                        }
+                        .disabled(allowedUtilityActions.count == MacScopeMCPUtilityCatalog.actions.count)
+                        .macScopeGlassButton(prominent: true)
                     }
-                } label: {
-                    SettingsRowLabel(
-                        title: "Allowed actions",
-                        detail: "\(allowedUtilityActions.count) of \(MacScopeMCPUtilityCatalog.actions.count) actions may be prepared remotely. Unknown and unselected actions are blocked.",
-                        icon: "checklist.checked"
+                    .padding(.vertical, 12)
+
+                    Label(
+                        "Selecting an action only adds it to the allowlist. Destructive actions still require the separate Destructive utilities switch and device authentication.",
+                        systemImage: "lock.shield"
                     )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 12)
+
+                    ForEach(Array(MacScopeMCPUtilityModule.allCases.enumerated()), id: \.element.rawValue) { index, module in
+                        utilityModuleSection(module)
+                        if index < MacScopeMCPUtilityModule.allCases.count - 1 { SettingsDivider() }
+                    }
                 }
-                .padding(.vertical, 8)
                 .disabled(!allowUtilityWrites)
             }
 
@@ -328,16 +345,92 @@ struct RemoteSettingsView: View {
             Task { await remote.refreshPairing(role: .owner) }
         }
         .macScopeGlassButton(prominent: remote.members.isEmpty)
+        .disabled(!canGeneratePairing)
         if !remote.members.isEmpty {
             Button("Operator", systemImage: "hand.raised.fingers.spread") {
                 Task { await remote.refreshPairing(role: .operator) }
             }
             .macScopeGlassButton()
+            .disabled(!canGeneratePairing)
             Button("Viewer", systemImage: "eye") {
                 Task { await remote.refreshPairing(role: .viewer) }
             }
             .macScopeGlassButton()
+            .disabled(!canGeneratePairing)
         }
+    }
+
+    @ViewBuilder private func utilityModuleSection(_ module: MacScopeMCPUtilityModule) -> some View {
+        let actions = MacScopeMCPUtilityCatalog.actions.filter { $0.module == module }
+        let selectedCount = actions.lazy.filter { allowedUtilityActions.contains($0.id) }.count
+        let allSelected = selectedCount == actions.count
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                SettingsRowLabel(
+                    title: module.displayName,
+                    detail: "\(selectedCount) of \(actions.count) selected · \(module.remoteSummary)",
+                    icon: module.remoteIcon
+                )
+                Spacer(minLength: 16)
+                Button(allSelected ? "Clear" : "Select all") {
+                    setUtilityActions(actions, allowed: !allSelected)
+                }
+                .macScopeGlassButton()
+            }
+
+            DisclosureGroup("Review individual actions") {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                        Toggle(isOn: utilityActionBinding(action.id)) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(action.title).font(.callout.weight(.medium))
+                                Text(action.remoteRisk.displayName)
+                                    .font(.caption)
+                                    .foregroundStyle(action.remoteRisk == .destructive ? Color.orange : Color.secondary)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        if index < actions.count - 1 { SettingsDivider() }
+                    }
+                }
+                .padding(.leading, 30)
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func utilityActionBinding(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { allowedUtilityActions.contains(id) },
+            set: { isAllowed in
+                var selection = allowedUtilityActions
+                if isAllowed { selection.insert(id) }
+                else { selection.remove(id) }
+                replaceAllowedUtilityActions(with: selection)
+            }
+        )
+    }
+
+    private func setUtilityActions(_ actions: [MacScopeMCPUtilityActionDescriptor], allowed: Bool) {
+        let actionIDs = Set(actions.map(\.id))
+        var selection = allowedUtilityActions
+        if allowed { selection.formUnion(actionIDs) }
+        else { selection.subtract(actionIDs) }
+        replaceAllowedUtilityActions(with: selection)
+    }
+
+    private func replaceAllowedUtilityActions(with selection: Set<String>) {
+        let known = Set(MacScopeMCPUtilityCatalog.actions.map(\.id))
+        allowedUtilityActions = selection.intersection(known)
+        MacScopeRemoteControlClient.setAllowedUtilityActionIDs(allowedUtilityActions)
+        remote.publishSettingsChanged()
+    }
+
+    private var canGeneratePairing: Bool {
+        enabled && !relayURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !remote.isRefreshingPairing
     }
 
     private var statusDetail: String {
@@ -345,6 +438,55 @@ struct RemoteSettingsView: View {
             return "Enable remote access after entering the relay URL to create this Mac's environment."
         }
         return "Environment \(environmentID.prefix(12))… · metrics stream only while a mobile dashboard is open."
+    }
+}
+
+private extension MacScopeMCPUtilityModule {
+    var displayName: String {
+        switch self {
+        case .sound: "Sound"
+        case .capture: "Capture"
+        case .windows: "Windows and input"
+        case .clipboard: "Clipboard and shelf"
+        case .notes: "Notes"
+        case .maintenance: "Maintenance and media"
+        case .power: "Power and displays"
+        }
+    }
+
+    var remoteIcon: String {
+        switch self {
+        case .sound: "speaker.wave.2"
+        case .capture: "camera.viewfinder"
+        case .windows: "macwindow.on.rectangle"
+        case .clipboard: "clipboard"
+        case .notes: "note.text"
+        case .maintenance: "wrench.and.screwdriver"
+        case .power: "bolt"
+        }
+    }
+
+    var remoteSummary: String {
+        switch self {
+        case .sound: "volume, devices, and app audio"
+        case .capture: "screenshots, recording, camera, and OCR"
+        case .windows: "window layouts and input helpers"
+        case .clipboard: "history, snippets, URLs, and shelf items"
+        case .notes: "create and manage scratchpads"
+        case .maintenance: "cleanup, updates, and media tools"
+        case .power: "keep-awake, cleaning mode, and brightness"
+        }
+    }
+}
+
+private extension MacScopeRemoteUtilityRisk {
+    var displayName: String {
+        switch self {
+        case .readOnly: "Read only"
+        case .mutation: "Changes local state"
+        case .sensitive: "Requires device authentication"
+        case .destructive: "Destructive · additional authorization required"
+        }
     }
 }
 

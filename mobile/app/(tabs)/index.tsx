@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, Text, View, useWindowDimensions, type DimensionValue } from "react-native";
 import { useRemote } from "@/remote/remote-provider";
-import { ActionButton, Card, EmptyState, MetricBar, SectionLabel, StatusPill } from "@/ui/primitives";
+import { ActionButton, Card, EmptyState, InlineNotice, MetricBar, SectionLabel, StatusPill } from "@/ui/primitives";
 import { palette, useTheme } from "@/ui/theme";
 
 export default function OverviewScreen() {
@@ -45,10 +45,17 @@ export default function OverviewScreen() {
               {remote.activeEnvironment.role.toUpperCase()} · {remote.presence?.appVersion ?? "Waiting for MacScope"}
             </Text>
           </View>
-          <StatusPill online={remote.connection === "online" && remote.presence?.online !== false} label={remote.connection} />
+          <StatusPill online={remote.macOnline} label={remote.macOnline ? "Mac online" : remote.connection === "online" ? "Mac offline" : remote.connection} />
         </View>
         {remote.error ? <Text selectable style={{ color: palette.red, fontSize: 13 }}>{remote.error}</Text> : null}
       </Card>
+
+      {remote.pairingRepairRequired ? (
+        <View style={{ gap: 10 }}>
+          <InlineNotice title="Pair this Mac again" message="This phone's session was revoked or expired. Create a fresh one-time QR in MacScope; your Mac settings and files are unaffected." tone="warning" />
+          <ActionButton title="Scan a new pairing QR" onPress={() => router.push("/pair")} />
+        </View>
+      ) : null}
 
       {remote.environments.length > 1 ? (
         <View style={{ gap: 9 }}>
@@ -67,7 +74,7 @@ export default function OverviewScreen() {
       ) : null}
 
       {!metric ? (
-        <EmptyState title={remote.connection === "online" ? "Waiting for telemetry" : "Mac unavailable"} message={remote.connection === "online" ? "The first compact snapshot normally arrives within two seconds." : "Commands are disabled while offline and are never queued."} />
+        <EmptyState title={remote.macOnline ? "Waiting for telemetry" : "Mac unavailable"} message={remote.macOnline ? "The first compact snapshot normally arrives within two seconds." : remote.connection === "online" ? "The phone reached the relay, but MacScope is not connected. Open MacScope on the paired Mac to resume." : "Commands are disabled while offline and are never queued."} />
       ) : (
         <>
           <SectionLabel>Live system</SectionLabel>
@@ -101,7 +108,7 @@ export default function OverviewScreen() {
             </Text>
             <Text selectable style={{ color: theme.text, fontSize: 15, fontWeight: "800" }}>{latestResult.actionID}</Text>
             {latestResult.errorMessage ? <Text selectable style={{ color: palette.red, fontSize: 12 }}>{latestResult.errorMessage}</Text> : null}
-            {undo ? <ActionButton title="Review undo" disabled={remote.connection !== "online"} onPress={() => void prepareUndo()} /> : null}
+            {undo ? <ActionButton title="Review undo" disabled={!remote.macOnline} onPress={() => void prepareUndo()} /> : null}
           </Card>
         </>
       ) : null}

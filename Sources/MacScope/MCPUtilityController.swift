@@ -70,6 +70,30 @@ final class MacScopeMCPUtilityController: NSObject {
         return try run(actionID, arguments: arguments)
     }
 
+    func remoteRunAwaitingCompletion(
+        actionID: String,
+        arguments: [String: MacScopeMCPJSONValue]
+    ) async throws -> MacScopeMCPJSONValue {
+        guard MacScopeMCPUtilityCatalog.action(id: actionID) != nil else {
+            throw ControllerError.invalidRequest("The requested action is not in the MacScope utility allowlist.")
+        }
+        if actionID == "capture.screenshot" {
+            let mode: ScreenshotMode = switch try arguments.string("mode") {
+            case "full_screen": .fullScreen
+            case "window": .window
+            case "selection": .selection
+            default: throw ControllerError.invalidArgument("mode", "Use full_screen, window, or selection.")
+            }
+            let url = try await model.screenshots.captureAndWait(
+                mode,
+                copyToClipboard: arguments.optionalBool("copy_to_clipboard") ?? false,
+                delay: min(max(arguments.optionalInt("delay_seconds") ?? 0, 0), 30)
+            )
+            return .object(["accepted": .bool(true), "artifact_name": .string(url.lastPathComponent)])
+        }
+        return try run(actionID, arguments: arguments)
+    }
+
     func remoteState(
         module: MacScopeMCPUtilityModule,
         includeSensitive: Bool = false
@@ -307,6 +331,13 @@ final class MacScopeMCPUtilityController: NSObject {
             let id = try arguments.string("id")
             guard let item = model.maintenance.homebrewSearchResults.first(where: { $0.id == id }) else { throw ControllerError.invalidArgument("id", "Unknown Homebrew search item.") }
             model.maintenance.setHomebrewInstalled(try arguments.bool("installed"), item: item)
+        case "maintenance.process-terminate":
+            let rawStartedAt = try arguments.string("expected_start_time")
+            guard let startedAt = ISO8601DateFormatter().date(from: rawStartedAt) else {
+                throw ControllerError.invalidArgument("expected_start_time", "Use the exact process start timestamp returned by live process data.")
+            }
+            let result = try ProcessController.executeSynchronously(.init(kind: .terminate, pid: try arguments.int32("pid"), expectedStartTime: startedAt))
+            return try MacScopeMCPJSONValue.encode(result)
         case "maintenance.media-load-images":
             model.media.loadImages(try existingURLs(arguments.stringArray("paths")))
         case "maintenance.media-convert-images":
@@ -397,6 +428,13 @@ final class MacScopeMCPUtilityController: NSObject {
                 , "applications": .array(model.workspace.applications.map { .object(["pid": .integer(Int64($0.id)), "name": .string($0.name), "bundle_identifier": $0.bundleIdentifier.json, "active": .bool($0.isActive), "hidden": .bool($0.isHidden), "quit_on_close": .bool(model.workspace.quitsOnClose($0))]) })
             ])
         case .clipboard:
+            let clipboardImages = Dictionary(uniqueKeysWithValues: (model.clipboard.pinnedEntries + model.clipboard.entries).compactMap { entry -> (String, Data)? in
+                guard let source = entry.imageData,
+                      let bitmap = NSBitmapImageRep(data: source),
+                      let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
+                return (entry.id.uuidString.lowercased(), png)
+            })
+            try? MacScopeMCPArtifactStore.replaceClipboardImages(clipboardImages)
             let history: [MacScopeMCPJSONValue] = (model.clipboard.pinnedEntries + model.clipboard.entries).map { entry in
                 let kind = !entry.text.isEmpty ? "text" : (!entry.fileURLs.isEmpty ? "files" : "image")
                 return .object([
@@ -429,8 +467,8 @@ final class MacScopeMCPUtilityController: NSObject {
                 "applications": .integer(Int64(model.maintenance.applications.count)), "updates": .integer(Int64(model.maintenance.applicationUpdates.count)),
                 "large_downloads": .array(model.maintenance.largeDownloads.map { .object(["name": .string($0.url.lastPathComponent), "path": .string($0.url.path), "bytes": .integer($0.size)]) }),
                 "cleanup_candidates": .array(model.maintenance.cleanupCandidates.map { .object(["name": .string($0.url.lastPathComponent), "path": .string($0.url.path), "bytes": .integer($0.size)]) }),
-                "homebrew_outdated": .array(model.maintenance.outdatedPackages.map { .object(["name": .string($0.name), "installed": .string($0.installed), "current": .string($0.current), "cask": .bool($0.isCask)]) }),
-                "homebrew_search": .array(model.maintenance.homebrewSearchResults.map { .object(["name": .string($0.name), "cask": .bool($0.isCask), "installed": .bool($0.isInstalled)]) })
+                "homebrew_outdated": .array(model.maintenance.outdatedPackages.map { .object(["id": .string($0.id), "name": .string($0.name), "installed": .string($0.installed), "current": .string($0.current), "cask": .bool($0.isCask)]) }),
+                "homebrew_search": .array(model.maintenance.homebrewSearchResults.map { .object(["id": .string($0.id), "name": .string($0.name), "cask": .bool($0.isCask), "installed": .bool($0.isInstalled)]) })
                 , "media": .object(["image_sources": .array(model.media.sourceURLs.map { includeSensitive ? .string($0.path) : .string($0.lastPathComponent) }), "outputs": .array(model.media.outputURLs.map { includeSensitive ? .string($0.path) : .string($0.lastPathComponent) }), "extracted_text": includeSensitive ? .string(model.media.extractedText) : .null, "video_source": includeSensitive ? model.media.videoSourceURL.map(\.path).json : .null, "video_output": includeSensitive ? model.media.videoOutputURL.map(\.path).json : .null, "status": model.media.statusMessage.json])
             ])
         case .power:

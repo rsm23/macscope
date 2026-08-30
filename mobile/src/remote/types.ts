@@ -83,6 +83,57 @@ export interface UtilityAction {
   risk: RemoteRisk;
   allowed: boolean;
   requiresDeviceAuthentication: boolean;
+  producesArtifact: boolean;
+  requiredPermissions: string[];
+}
+
+export interface RemoteArtifact {
+  id: string;
+  kind: "screenshot" | "recording" | "clipboard_image";
+  name: string;
+  mimeType: string;
+  byteCount: number;
+  modifiedAt: string;
+}
+
+export interface ArtifactChunk {
+  artifact: RemoteArtifact;
+  offset: number;
+  byteCount: number;
+  endOfFile: boolean;
+  base64: string;
+}
+
+export interface ArtifactDownload {
+  uri?: string;
+  progress: number;
+  downloading: boolean;
+  error?: string;
+}
+
+export type SnapshotSection = "summary" | "cpu" | "memory" | "battery" | "network" | "storage" | "processes" | "startup" | "hardware" | "thermals" | "accelerators" | "metrics";
+
+export interface ProcessSnapshot {
+  pid: number;
+  parentPID: number;
+  name: string;
+  state: string;
+  cpuPercent: number;
+  residentMemory: number;
+  virtualMemory: number;
+  threads: number;
+  bytesRead: number;
+  bytesWritten: number;
+  startedAt?: string;
+  availability: string;
+}
+
+export interface LiveDataDocument {
+  schemaVersion: number;
+  sampledAt: string;
+  redacted: boolean;
+  collectionCounts: Record<string, number>;
+  data: Partial<Record<SnapshotSection, unknown>>;
 }
 
 export interface PreparedCommand {

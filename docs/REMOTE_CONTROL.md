@@ -18,6 +18,8 @@ The Mac opens the only long-lived connection. The relay never needs an inbound M
 - `relay/`: Cloudflare Worker, D1 migration, hibernating SQLite Durable Object, Expo push delivery/receipts, and relay tests.
 - `mobile/`: Expo Router application for iOS and Android.
 
+The mobile surfaces include the compact one-second metric stream, on-demand redacted snapshot sections, searchable process telemetry, typed utility questions, confirmation/result screens, and a direct Library for captures and clipboard content. Process termination revalidates both PID and process start time before sending `SIGTERM`.
+
 ## Deploy the relay
 
 ```bash
@@ -33,6 +35,8 @@ Copy the returned database ID into `relay/wrangler.toml`, replace `PUBLIC_BASE_U
 pnpm db:migrate:remote
 pnpm deploy
 ```
+
+The checked-in production configuration currently targets `https://macscope-remote.macscope-relay.workers.dev` and the `macscope-remote` D1 database.
 
 If Expo push access-token security is enabled for the Expo project, add the matching relay secret:
 
@@ -57,17 +61,19 @@ Disabling Remote stops all network activity. Reset Remote revokes the environmen
 ```bash
 cd mobile
 pnpm install
-npx eas-cli init
+EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli project:info
 ```
 
-Replace `extra.eas.projectId` in `mobile/app.json` with the project ID produced by EAS. For local UI work, use `pnpm start`. Camera scanning, native notifications, and device authentication must also be checked in a development or internal build on physical devices:
+The app is linked to the `@rsm23/macscope-remote` EAS project. For local UI work, use `pnpm start`. Camera scanning, native notifications, and device authentication must also be checked in a development or internal build on physical devices:
 
 ```bash
-npx eas-cli build --profile preview --platform android
-npx eas-cli build --profile preview --platform ios
+EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile preview --platform android
+EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile simulator --platform ios
 ```
 
-The preview profile produces an internally distributable Android APK. iOS device distribution and push credentials require an active Apple Developer Program membership.
+The preview profile produces an internally distributable Android APK, and the simulator profile produces an installable iOS Simulator archive. A production iOS build can use the paid Apple Developer membership and requires App Store Connect distribution credentials.
+
+`.github/workflows/mobile.yml` runs the mobile test, typecheck, lint, and Expo Doctor checks for mobile changes. Its manual dispatch starts both EAS builds when an `EXPO_TOKEN` repository secret is present. Both local commands and CI explicitly disable Expo `.env` loading.
 
 ## Security properties
 

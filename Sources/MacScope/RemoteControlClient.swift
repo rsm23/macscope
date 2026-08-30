@@ -86,6 +86,8 @@ final class MacScopeRemoteControlClient {
     static let allowFeatureHubWritesKey = "remote.allowFeatureHubWrites"
     static let allowMacOSFeatureWritesKey = "remote.allowMacOSFeatureWrites"
     static let allowedUtilityActionsKey = "remote.allowedUtilityActions"
+    private static let allowedUtilityCatalogVersionKey = "remote.allowedUtilityCatalogVersion"
+    private static let allowedUtilityCatalogVersion = 2
     static let notifyAlertsKey = "remote.notifyAlerts"
     static let notifyPresenceKey = "remote.notifyPresence"
     static let notifyCommandsKey = "remote.notifyCommands"
@@ -98,6 +100,7 @@ final class MacScopeRemoteControlClient {
     var audit: [RemoteAuditSummary] = []
     var lastError: String?
     var lastConnectedAt: Date?
+    var isRefreshingPairing = false
 
     private enum PendingFeatureHub {
         case change(module: UtilityFeatureModule, enabled: Bool, token: String, confirmation: String, expiresAt: Date)
@@ -197,12 +200,19 @@ final class MacScopeRemoteControlClient {
     }
 
     static func allowedUtilityActionIDs() -> Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: allowedUtilityActionsKey) ?? [])
+        var values = Set(UserDefaults.standard.stringArray(forKey: allowedUtilityActionsKey) ?? [])
+        let version = UserDefaults.standard.integer(forKey: allowedUtilityCatalogVersionKey)
+        if version < 2, values.count == 88 {
+            values.insert("maintenance.process-terminate")
+            setAllowedUtilityActionIDs(values)
+        }
+        return values
     }
 
     static func setAllowedUtilityActionIDs(_ values: Set<String>) {
         let known = Set(MacScopeMCPUtilityCatalog.actions.map(\.id))
         UserDefaults.standard.set(Array(values.intersection(known)).sorted(), forKey: allowedUtilityActionsKey)
+        UserDefaults.standard.set(allowedUtilityCatalogVersion, forKey: allowedUtilityCatalogVersionKey)
     }
 
     func enroll() async {
@@ -231,7 +241,22 @@ final class MacScopeRemoteControlClient {
     }
 
     func refreshPairing(role: MacScopeRemoteRole = .owner) async {
-        guard let relayBaseURL, let environmentID else { return }
+        guard !isRefreshingPairing else { return }
+        guard let relayBaseURL else {
+            fail(RemoteClientError.invalidRelayURL)
+            return
+        }
+
+        isRefreshingPairing = true
+        defer { isRefreshingPairing = false }
+        lastError = nil
+
+        guard let environmentID,
+              (try? RemoteKeychain.string(account: "environment-secret")) != nil else {
+            await enroll()
+            return
+        }
+
         do {
             let secret = try RemoteKeychain.string(account: "environment-secret")
             let response: PairingResponse = try await request(
@@ -242,6 +267,7 @@ final class MacScopeRemoteControlClient {
             )
             pairingURL = URL(string: response.pairingURL)
             pairingExpiresAt = response.expiresAt
+            lastError = nil
         } catch {
             fail(error)
         }
@@ -428,17 +454,82 @@ final class MacScopeRemoteControlClient {
         case .subscribeMetrics:
             metricsSubscribed = true
             lastMetricSentAt = nil
+            await sendPresence()
+            await sendFeatureStates()
+            await sendUtilityCatalog()
         case .unsubscribeMetrics:
             metricsSubscribed = false
         case .commandPrepare:
             try await handlePrepare(envelope)
         case .commandApply:
             try await handleApply(envelope)
+        case .utilityStateRequest:
+            try await handleUtilityStateRequest(envelope)
+        case .artifactListRequest:
+            try await handleArtifactListRequest(envelope)
+        case .artifactReadRequest:
+            try await handleArtifactReadRequest(envelope)
+        case .snapshotRequest:
+            try await handleSnapshotRequest(envelope)
         case .heartbeat:
             await sendPresence()
         default:
             break
         }
+    }
+
+    private func handleUtilityStateRequest(_ envelope: MacScopeRemoteWireEnvelopeV1) async throws {
+        guard case .object(let payload) = envelope.payload,
+              case .string(let rawModule)? = payload["module"],
+              let module = MacScopeMCPUtilityModule(rawValue: rawModule) else {
+            throw MacScopeRemotePolicyError.unknownAction
+        }
+        let state = controller.remoteState(module: module, includeSensitive: true)
+        await sendReply(kind: .utilityState, payload: .object(["module": .string(rawModule), "state": state]), id: envelope.id)
+    }
+
+    private func handleArtifactListRequest(_ envelope: MacScopeRemoteWireEnvelopeV1) async throws {
+        let requestedKind: MacScopeMCPArtifactKind? = {
+            guard case .object(let payload) = envelope.payload,
+                  case .string(let rawKind)? = payload["kind"] else { return nil }
+            return MacScopeMCPArtifactKind(rawValue: rawKind)
+        }()
+        let artifacts = MacScopeMCPArtifactStore.list(kind: requestedKind, includeSensitive: false, limit: 100)
+        await sendEncodedReply(kind: .artifactList, value: artifacts, id: envelope.id)
+    }
+
+    private func handleArtifactReadRequest(_ envelope: MacScopeRemoteWireEnvelopeV1) async throws {
+        guard case .object(let payload) = envelope.payload,
+              case .string(let artifactID)? = payload["id"] else {
+            throw MacScopeRemotePolicyError.unknownAction
+        }
+        let offset: Int64 = if case .integer(let value)? = payload["offset"] { value } else { 0 }
+        let length: Int = if case .integer(let value)? = payload["length"] { Int(value) } else { 32 * 1_024 }
+        let chunk = try MacScopeMCPArtifactStore.read(id: artifactID, offset: offset, length: min(length, 32 * 1_024))
+        await sendEncodedReply(kind: .artifactChunk, value: chunk, id: envelope.id)
+    }
+
+    private func handleSnapshotRequest(_ envelope: MacScopeRemoteWireEnvelopeV1) async throws {
+        guard case .object(let payload) = envelope.payload else {
+            throw MacScopeRemotePolicyError.unknownAction
+        }
+        let sections: [MacScopeMCPSnapshotSection] = if case .array(let values)? = payload["sections"] {
+            values.compactMap { value in
+                guard case .string(let raw) = value else { return nil }
+                return MacScopeMCPSnapshotSection(rawValue: raw)
+            }
+        } else { [.summary] }
+        let processLimit: Int = if case .integer(let value)? = payload["processLimit"] { Int(value) } else { 100 }
+        let processQuery: String? = if case .string(let value)? = payload["processQuery"] { value } else { nil }
+        let collectionLimit: Int = if case .integer(let value)? = payload["collectionLimit"] { Int(value) } else { 150 }
+        let document = try await gateway.snapshot(.init(
+            sections: sections,
+            includeSensitive: false,
+            processLimit: min(max(processLimit, 0), 150),
+            processQuery: processQuery,
+            collectionLimit: min(max(collectionLimit, 1), 150)
+        ))
+        await sendReply(kind: .snapshot, payload: document, id: envelope.id)
     }
 
     private func handlePrepare(_ envelope: MacScopeRemoteWireEnvelopeV1) async throws {
@@ -621,7 +712,7 @@ final class MacScopeRemoteControlClient {
             }
 
             let prepared = try await commandPolicy.authorize(request)
-            let result = try controller.remoteRun(actionID: prepared.actionID, arguments: prepared.arguments)
+            let result = try await controller.remoteRunAwaitingCompletion(actionID: prepared.actionID, arguments: prepared.arguments)
             await sendCommandResult(
                 commandID: request.commandID,
                 actionID: "utility.\(prepared.actionID)",
@@ -645,7 +736,7 @@ final class MacScopeRemoteControlClient {
             macName: resolvedMacName,
             online: true,
             appVersion: appVersion,
-            capabilities: ["metrics", "feature_hub", "macos_features", "utilities", "alerts", "members"]
+            capabilities: ["metrics", "live_data", "processes", "feature_hub", "macos_features", "utilities", "artifacts", "alerts", "members"]
         )
         await sendEncoded(kind: .presence, value: presence)
     }
@@ -699,6 +790,8 @@ final class MacScopeRemoteControlClient {
                 "risk": .string(action.remoteRisk.rawValue),
                 "allowed": .bool(allowWrites && allowedActions.contains(action.id) && (action.remoteRisk != .destructive || allowDestructive)),
                 "requiresDeviceAuthentication": .bool(action.remoteRisk.requiresDeviceAuthentication)
+                , "producesArtifact": .bool(action.producesArtifact)
+                , "requiredPermissions": .array(action.requiredPermissions.map(MacScopeMCPJSONValue.string))
             ])
         }
         await send(kind: .utilityCatalog, payload: .array(values))
@@ -734,25 +827,57 @@ final class MacScopeRemoteControlClient {
         catch { lastError = error.localizedDescription }
     }
 
+    private func sendEncodedReply<T: Encodable>(kind: MacScopeRemoteWireKind, value: T, id: UUID) async {
+        do { await sendReply(kind: kind, payload: try .encode(value), id: id) }
+        catch { await sendReplyError(error, id: id) }
+    }
+
+    private func sendReply(kind: MacScopeRemoteWireKind, payload: MacScopeMCPJSONValue, id: UUID) async {
+        do {
+            try await transmit(kind: kind, payload: payload, id: id)
+        } catch {
+            await sendReplyError(error, id: id)
+        }
+    }
+
+    private func sendReplyError(_ error: Error, id: UUID) async {
+        lastError = error.localizedDescription
+        let code = error is RemoteClientError ? "remote_response_failed" : String(describing: type(of: error))
+        let payload: MacScopeMCPJSONValue = .object([
+            "code": .string(code),
+            "message": .string(error.localizedDescription)
+        ])
+        do { try await transmit(kind: .error, payload: payload, id: id) }
+        catch { lastError = error.localizedDescription }
+    }
+
     private func send(
         kind: MacScopeRemoteWireKind,
         payload: MacScopeMCPJSONValue,
         id: UUID = UUID()
     ) async {
-        guard let socket else { return }
         do {
-            let envelope = MacScopeRemoteWireEnvelopeV1(
-                id: id,
-                kind: kind,
-                environmentID: environmentID,
-                payload: payload
-            )
-            let data = try encoder.encode(envelope)
-            guard data.count <= 64 * 1_024 else { throw RemoteClientError.payloadTooLarge }
-            try await socket.send(.data(data))
+            try await transmit(kind: kind, payload: payload, id: id)
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    private func transmit(
+        kind: MacScopeRemoteWireKind,
+        payload: MacScopeMCPJSONValue,
+        id: UUID
+    ) async throws {
+        guard let socket else { throw RemoteClientError.notConnected }
+        let envelope = MacScopeRemoteWireEnvelopeV1(
+            id: id,
+            kind: kind,
+            environmentID: environmentID,
+            payload: payload
+        )
+        let data = try encoder.encode(envelope)
+        guard data.count <= 64 * 1_024 else { throw RemoteClientError.payloadTooLarge }
+        try await socket.send(.data(data))
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from value: MacScopeMCPJSONValue) throws -> T {
@@ -856,6 +981,7 @@ private struct EmptyResponse: Codable { init() {} }
 private enum RemoteClientError: LocalizedError {
     case invalidRelayURL
     case invalidResponse
+    case notConnected
     case payloadTooLarge
     case server(String)
 
@@ -863,6 +989,7 @@ private enum RemoteClientError: LocalizedError {
         switch self {
         case .invalidRelayURL: "Enter a valid HTTPS Cloudflare relay URL."
         case .invalidResponse: "The relay returned an invalid response."
+        case .notConnected: "The Mac is no longer connected to the relay."
         case .payloadTooLarge: "The remote payload exceeded the 64 KiB safety limit."
         case .server(let message): message
         }

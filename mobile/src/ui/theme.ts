@@ -1,28 +1,34 @@
 import { useColorScheme } from "react-native";
 
 export const palette = {
-  ink: "#071018",
-  night: "#0B1721",
-  panel: "#10232F",
-  border: "rgba(132, 206, 223, 0.16)",
-  cyan: "#5CE1E6",
-  mint: "#8DF0C7",
-  blue: "#60A5FA",
-  amber: "#F5BE63",
-  red: "#FF7D7D",
-  white: "#F3F8FA",
-  secondary: "#9CB1BB",
+  ink: "#0B1315",
+  night: "#0B1315",
+  panel: "#142023",
+  border: "rgba(117, 147, 145, 0.18)",
+  accent: "#3EB7A5",
+  cyan: "#3EB7A5",
+  mint: "#73C9A9",
+  blue: "#638FA3",
+  amber: "#D69B4B",
+  red: "#D96666",
+  white: "#F4F7F5",
+  secondary: "#93A5A3",
 };
 
 export function useTheme() {
   const scheme = useColorScheme();
-  const dark = scheme !== "light";
+  const dark = scheme === "dark";
   return {
     dark,
-    background: dark ? palette.ink : "#EEF4F5",
-    card: dark ? palette.panel : "#FFFFFF",
-    text: dark ? palette.white : "#10212A",
-    secondary: dark ? palette.secondary : "#5D717A",
-    border: dark ? palette.border : "rgba(16, 33, 42, 0.10)",
+    background: dark ? "#0A1113" : "#F2F1EC",
+    card: dark ? "#121C1F" : "#FCFBF8",
+    elevated: dark ? "#182528" : "#FFFFFF",
+    subtle: dark ? "#0F181A" : "#E8EBE6",
+    text: dark ? "#F2F5F2" : "#10201F",
+    secondary: dark ? "#91A4A1" : "#627572",
+    border: dark ? "rgba(155, 187, 181, 0.14)" : "rgba(23, 54, 51, 0.10)",
+    accent: palette.accent,
+    onAccent: "#071412",
+    shadow: dark ? "#000000" : "#394B47",
   };
 }

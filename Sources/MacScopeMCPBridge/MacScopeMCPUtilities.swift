@@ -60,13 +60,13 @@ public enum MacScopeMCPUtilityCatalog {
 
         .init(id: "capture.screenshot", module: .capture, title: "Capture screenshot", summary: "Capture a full display, window or selection and save it to the configured capture folder.", arguments: ["mode": "full_screen, window or selection.", "copy_to_clipboard": "Optional Boolean.", "delay_seconds": "Optional integer from 0 through 30."], producesArtifact: true, requiredPermissions: ["Screen & System Audio Recording"]),
         .init(id: "capture.scrolling-screenshot", module: .capture, title: "Capture scrolling screenshot", summary: "Automatically capture and stitch the window under the pointer.", arguments: ["steps": "Segment count from 2 through 20.", "overlap_pixels": "Non-negative overlap.", "copy_to_clipboard": "Optional Boolean."], producesArtifact: true, requiredPermissions: ["Screen & System Audio Recording", "Input Monitoring"]),
-        .init(id: "capture.recording-start", module: .capture, title: "Start screen recording", summary: "Start recording the chosen source or primary display.", arguments: ["source_id": "Optional source ID from capture state.", "system_audio": "Optional Boolean.", "microphone": "Optional Boolean."], producesArtifact: true, requiredPermissions: ["Screen & System Audio Recording"]),
+        .init(id: "capture.recording-start", module: .capture, title: "Start screen recording", summary: "Start recording the chosen source or primary display. Stop recording to finalize the movie in Library.", arguments: ["source_id": "Optional source ID from capture state.", "system_audio": "Optional Boolean.", "microphone": "Optional Boolean."], requiredPermissions: ["Screen & System Audio Recording"]),
         .init(id: "capture.recording-load-sources", module: .capture, title: "Load recording sources", summary: "Refresh available displays and windows for recording.", requiredPermissions: ["Screen & System Audio Recording"]),
         .init(id: "capture.recording-pause-resume", module: .capture, title: "Pause or resume recording", summary: "Toggle the current recording pause state."),
         .init(id: "capture.recording-stop", module: .capture, title: "Stop screen recording", summary: "Stop the current recording and finalize its movie artifact.", producesArtifact: true),
         .init(id: "capture.ocr-selection", module: .capture, title: "OCR a screen selection", summary: "Select part of the screen and recognize text and QR codes locally.", requiredPermissions: ["Screen & System Audio Recording"]),
         .init(id: "capture.color-picker", module: .capture, title: "Pick a screen color", summary: "Open the interactive system color sampler."),
-        .init(id: "capture.camera-start", module: .capture, title: "Start camera preview", summary: "Start the floating local camera preview.", requiredPermissions: ["Camera"]),
+        .init(id: "capture.camera-start", module: .capture, title: "Start camera preview", summary: "Start the floating local camera preview.", arguments: ["device_id": "Optional camera device ID from capture state."], requiredPermissions: ["Camera"]),
         .init(id: "capture.camera-stop", module: .capture, title: "Stop camera preview", summary: "Stop the local camera preview."),
 
         .init(id: "windows.arrange", module: .windows, title: "Arrange active window", summary: "Place the active window in a supported layout.", arguments: ["placement": "maximize, center, left_half, right_half, top_half, bottom_half, top_left, top_right, bottom_left, bottom_right, left_third, center_third or right_third."], requiredPermissions: ["Accessibility"]),
@@ -119,16 +119,17 @@ public enum MacScopeMCPUtilityCatalog {
         .init(id: "maintenance.set-update-settings", module: .maintenance, title: "Configure update checks", summary: "Configure background checks and App Store/Homebrew sources.", arguments: ["background": "Boolean.", "app_store": "Boolean.", "homebrew": "Boolean."]),
         .init(id: "maintenance.upgrade-homebrew", module: .maintenance, title: "Upgrade Homebrew item", summary: "Upgrade one exact outdated formula or cask from maintenance state.", arguments: ["id": "Homebrew item ID from maintenance state."]),
         .init(id: "maintenance.set-homebrew-installed", module: .maintenance, title: "Install or remove Homebrew item", summary: "Install or remove one exact current Homebrew search result.", arguments: ["id": "Search item ID from maintenance state.", "installed": "Desired installed state."], destructive: true),
+        .init(id: "maintenance.process-terminate", module: .maintenance, title: "Terminate running process", summary: "Ask one exact live process to terminate gracefully after verifying that its PID has not been reused.", arguments: ["pid": "Process identifier from live process data.", "expected_start_time": "Exact ISO timestamp from live process data."], destructive: true),
         .init(id: "maintenance.media-load-images", module: .maintenance, title: "Load images", summary: "Load existing local image paths for media operations.", arguments: ["paths": "Array of existing absolute image paths."]),
-        .init(id: "maintenance.media-convert-images", module: .maintenance, title: "Convert images", summary: "Convert loaded images beside their sources.", arguments: ["format": "png or jpeg.", "quality": "Number from 0.1 through 1.", "maximum_dimension": "Optional positive pixels.", "watermark": "Optional text."], producesArtifact: true),
+        .init(id: "maintenance.media-convert-images", module: .maintenance, title: "Convert images", summary: "Convert loaded images beside their sources on the Mac.", arguments: ["format": "png or jpeg.", "quality": "Number from 0.1 through 1.", "maximum_dimension": "Optional positive pixels.", "watermark": "Optional text."]),
         .init(id: "maintenance.media-extract-text", module: .maintenance, title: "Extract text from image", summary: "Run local Vision OCR on the first loaded image."),
-        .init(id: "maintenance.media-create-gif", module: .maintenance, title: "Create animated GIF", summary: "Create a GIF from loaded images.", arguments: ["frame_duration": "Seconds from 0.04 through 10."], producesArtifact: true),
+        .init(id: "maintenance.media-create-gif", module: .maintenance, title: "Create animated GIF", summary: "Create a GIF from loaded images and save it on the Mac.", arguments: ["frame_duration": "Seconds from 0.04 through 10."]),
         .init(id: "maintenance.media-load-video", module: .maintenance, title: "Load video", summary: "Load an existing local video path for editing.", arguments: ["path": "Existing absolute video path."]),
-        .init(id: "maintenance.media-compress-video", module: .maintenance, title: "Compress video", summary: "Create a compressed MP4 from the loaded video.", producesArtifact: true),
-        .init(id: "maintenance.media-trim-video", module: .maintenance, title: "Trim video", summary: "Export the selected interval of the loaded video.", arguments: ["start": "Start seconds.", "end": "End seconds."], producesArtifact: true),
-        .init(id: "maintenance.media-cut-video", module: .maintenance, title: "Remove video range", summary: "Export the loaded video with one interval removed.", arguments: ["start": "Start seconds.", "end": "End seconds."], producesArtifact: true),
-        .init(id: "maintenance.media-crop-video", module: .maintenance, title: "Crop video", summary: "Crop percentages from each edge of the loaded video.", arguments: ["left": "0 through 45.", "right": "0 through 45.", "top": "0 through 45.", "bottom": "0 through 45."], producesArtifact: true),
-        .init(id: "maintenance.media-export-video-gif", module: .maintenance, title: "Export video GIF", summary: "Export the loaded video as an animated GIF.", arguments: ["fps": "Frames per second from 2 through 24."], producesArtifact: true),
+        .init(id: "maintenance.media-compress-video", module: .maintenance, title: "Compress video", summary: "Create a compressed MP4 from the loaded video on the Mac."),
+        .init(id: "maintenance.media-trim-video", module: .maintenance, title: "Trim video", summary: "Export the selected interval of the loaded video on the Mac.", arguments: ["start": "Start seconds.", "end": "End seconds."]),
+        .init(id: "maintenance.media-cut-video", module: .maintenance, title: "Remove video range", summary: "Export the loaded video with one interval removed on the Mac.", arguments: ["start": "Start seconds.", "end": "End seconds."]),
+        .init(id: "maintenance.media-crop-video", module: .maintenance, title: "Crop video", summary: "Crop percentages from each edge and save the result on the Mac.", arguments: ["left": "0 through 45.", "right": "0 through 45.", "top": "0 through 45.", "bottom": "0 through 45."]),
+        .init(id: "maintenance.media-export-video-gif", module: .maintenance, title: "Export video GIF", summary: "Export the loaded video as an animated GIF on the Mac.", arguments: ["fps": "Frames per second from 2 through 24."]),
 
         .init(id: "power.keep-awake-start", module: .power, title: "Start Keep Awake", summary: "Start a supported power assertion.", arguments: ["duration_seconds": "Optional positive duration; omit for indefinite.", "include_display": "Optional Boolean."]),
         .init(id: "power.keep-awake-stop", module: .power, title: "Stop Keep Awake", summary: "Release the active Keep Awake assertion."),
@@ -216,6 +217,7 @@ public enum MacScopeMCPUtilityTransport {
 public enum MacScopeMCPArtifactKind: String, Codable, CaseIterable, Sendable {
     case screenshot
     case recording
+    case clipboardImage = "clipboard_image"
 }
 
 public struct MacScopeMCPArtifact: Codable, Hashable, Sendable {
@@ -237,6 +239,17 @@ public struct MacScopeMCPArtifactChunk: Codable, Hashable, Sendable {
 }
 
 public enum MacScopeMCPArtifactStore {
+    public static func replaceClipboardImages(_ images: [String: Data]) throws {
+        let root = clipboardImageRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let expected = Set(images.keys.map { safeClipboardName($0) })
+        let existing = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        for url in existing where !expected.contains(url.lastPathComponent) { try? FileManager.default.removeItem(at: url) }
+        for (id, data) in images where !data.isEmpty {
+            try data.write(to: root.appendingPathComponent(safeClipboardName(id)), options: .atomic)
+        }
+    }
+
     public static func list(
         kind: MacScopeMCPArtifactKind? = nil,
         includeSensitive: Bool,
@@ -313,7 +326,17 @@ public enum MacScopeMCPArtifactStore {
         }
         let recordingRoot = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MacScope Recordings", isDirectory: true)
-        return [(.screenshot, screenshotRoot), (.recording, recordingRoot)]
+        return [(.screenshot, screenshotRoot), (.recording, recordingRoot), (.clipboardImage, clipboardImageRoot())]
+    }
+
+    private static func clipboardImageRoot() -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MacScope Remote Clipboard", isDirectory: true)
+    }
+
+    private static func safeClipboardName(_ id: String) -> String {
+        let safe = id.lowercased().filter { $0.isHexDigit || $0 == "-" }
+        return "\(safe.isEmpty ? UUID().uuidString.lowercased() : safe).png"
     }
 
     private static func isDescendant(_ url: URL, of root: URL) -> Bool {
@@ -328,6 +351,7 @@ public enum MacScopeMCPArtifactStore {
         switch kind {
         case .screenshot: return ["png", "jpg", "jpeg", "tiff", "heic"].contains(ext)
         case .recording: return ["mov", "mp4", "m4v", "gif"].contains(ext)
+        case .clipboardImage: return ext == "png"
         }
     }
 

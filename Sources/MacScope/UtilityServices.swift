@@ -46,8 +46,9 @@ struct TemporaryCaptureShare: Identifiable, Equatable {
     let expiresAt: Date
 }
 
-struct ScreenshotFailure: Error, Sendable {
+struct ScreenshotFailure: LocalizedError, Sendable {
     let message: String
+    var errorDescription: String? { message }
 }
 
 @MainActor
@@ -249,46 +250,48 @@ final class ScreenshotService {
     }
 
     func capture(_ mode: ScreenshotMode, copyToClipboard: Bool, delay: Int = 0) {
-        guard !isCapturing else { return }
-        if !CGPreflightScreenCaptureAccess() {
-            requestPermission()
-            guard hasScreenRecordingPermission else { return }
-        }
-
-        isCapturing = true
-        errorMessage = nil
-        let now = Date()
-        let folder = organizesByDate
-            ? captureFolder.appendingPathComponent(Self.dateFolderName(now), isDirectory: true)
-            : captureFolder
-        let prefix = filenamePrefix
-        let exportAt1x = exportsAt1x
-        let captureScale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 1
         Task {
             do {
-                if delay > 0 {
-                    for remaining in stride(from: delay, through: 1, by: -1) {
-                        countdownSeconds = remaining
-                        try await Task.sleep(for: .seconds(1))
-                    }
-                    countdownSeconds = 0
-                }
-                let url = try await Task.detached(priority: .userInitiated) {
-                    let url = try Self.performCapture(mode: mode, folder: folder, prefix: prefix)
-                    if exportAt1x { try Self.downscaleCaptureTo1x(url, scale: captureScale) }
-                    return url
-                }.value
-                if copyToClipboard { copy(url) }
-                refresh()
-                performPostCaptureAction(url)
+                _ = try await captureAndWait(mode, copyToClipboard: copyToClipboard, delay: delay)
             } catch let error as ScreenshotFailure {
                 if error.message != "cancelled" { errorMessage = error.message }
             } catch {
                 errorMessage = error.localizedDescription
             }
-            countdownSeconds = 0
-            isCapturing = false
         }
+    }
+
+    func captureAndWait(_ mode: ScreenshotMode, copyToClipboard: Bool, delay: Int = 0) async throws -> URL {
+        guard !isCapturing else { throw ScreenshotFailure(message: "Another screenshot is already in progress.") }
+        if !CGPreflightScreenCaptureAccess() {
+            requestPermission()
+            guard hasScreenRecordingPermission else { throw ScreenshotFailure(message: errorMessage ?? "Screen Recording permission is required.") }
+        }
+        isCapturing = true
+        errorMessage = nil
+        defer { countdownSeconds = 0; isCapturing = false }
+        let now = Date()
+        let folder = organizesByDate ? captureFolder.appendingPathComponent(Self.dateFolderName(now), isDirectory: true) : captureFolder
+        let prefix = filenamePrefix
+        let exportAt1x = exportsAt1x
+        let captureScale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 1
+        if delay > 0 {
+            for remaining in stride(from: delay, through: 1, by: -1) {
+                countdownSeconds = remaining
+                try await Task.sleep(for: .seconds(1))
+            }
+            countdownSeconds = 0
+        }
+        let url = try await Task.detached(priority: .userInitiated) {
+            let url = try Self.performCapture(mode: mode, folder: folder, prefix: prefix)
+            if exportAt1x { try Self.downscaleCaptureTo1x(url, scale: captureScale) }
+            return url
+        }.value
+        if copyToClipboard { copy(url) }
+        refresh()
+        performPostCaptureAction(url)
+        statusMessage = "Saved \(url.lastPathComponent)."
+        return url
     }
 
     private func performPostCaptureAction(_ url: URL) {

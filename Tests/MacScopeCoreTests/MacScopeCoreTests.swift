@@ -321,6 +321,28 @@ import Testing
     #expect(inventory.processorCount > 0)
 }
 
+@Test func processTerminationPreflightRejectsStalePIDIdentity() async throws {
+    let currentPID = getpid()
+    let process = try #require(try await ProcessCollector().sample().first { $0.pid == currentPID })
+    let startedAt = try #require(process.startedAt)
+
+    let preflight = try ProcessController.preflight(.init(
+        kind: .terminate,
+        pid: currentPID,
+        expectedStartTime: startedAt
+    ))
+    #expect(preflight.operation == "SIGTERM")
+    #expect(preflight.confirmationPhrase == "SIGTERM \(currentPID)")
+
+    #expect(throws: CollectorError.self) {
+        try ProcessController.preflight(.init(
+            kind: .terminate,
+            pid: currentPID,
+            expectedStartTime: startedAt.addingTimeInterval(-60)
+        ))
+    }
+}
+
 @Test func liveStorageCollectorMapsVolumeToPhysicalCounters() async throws {
     let collector = StorageCollector()
     let first = try await collector.sample()

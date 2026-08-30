@@ -63,6 +63,14 @@ export function authorizeMobileEnvelope(envelope: WireEnvelope, identity: Socket
   return { ...envelope, environmentID: identity.environmentID };
 }
 
+export function normalizeEnvelopeIdentifiers(envelope: WireEnvelope): WireEnvelope {
+  const payload = Array.isArray(envelope.payload) ? envelope.payload : { ...envelope.payload };
+  if (!Array.isArray(payload) && typeof payload.commandID === "string") {
+    payload.commandID = payload.commandID.toLowerCase();
+  }
+  return { ...envelope, id: envelope.id.toLowerCase(), payload };
+}
+
 export class ProtocolError extends Error {
   constructor(
     readonly code: string,

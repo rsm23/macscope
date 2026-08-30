@@ -21,9 +21,9 @@ MacScope combines live system telemetry, safe process management, reversible mac
 
 ## Download
 
-[Download MacScope 0.1.0 for Apple silicon](https://github.com/rsm23/macscope/releases/download/v0.1.0/MacScope-0.1.0-arm64.dmg) (macOS 14 or newer).
+Public binary downloads are temporarily paused. The v0.1.0 prerelease is development-signed and does not pass Gatekeeper, so it should not be redistributed. Downloads will resume with a Developer ID-signed, Apple-notarized release for Apple silicon on macOS 14 or newer.
 
-Open the DMG and drag `MacScope.app` to the Applications shortcut. The current preview is development-signed and not yet Apple-notarized, so Control-click `MacScope.app` and choose **Open** the first time you launch it. Release checksums are available beside the DMG on GitHub.
+Developers can continue to [build MacScope from source](#build-and-test) for local testing.
 
 ## At a glance
 
@@ -238,9 +238,9 @@ For a local Developer ID release, copy `.env.example` to the ignored `.env`, add
 ./Scripts/release-local.sh
 ```
 
-The release script parses only expected `.env` keys without executing the file, validates credentials with Apple, stores them under the `MacScopeNotary` Keychain profile, selects the matching Team ID identity, signs and verifies the app, notarizes and staples it, then creates a ZIP and SHA-256 checksum.
+The release script parses only expected `.env` keys without executing the file, validates credentials with Apple, stores them under the `MacScopeNotary` Keychain profile, and selects the matching Team ID identity. It signs, notarizes, staples, and Gatekeeper-checks the app; then it signs, notarizes, staples, and Gatekeeper-checks the DMG before producing final SHA-256 checksums.
 
-GitHub Actions test every push, deploy the static landing page, and can produce Developer ID-signed, notarized tag releases when the required repository secrets are configured.
+GitHub Actions test every push and deploy the static landing page. Tag releases fail closed unless Developer ID signing and notarization are fully configured; no development-signed binary is published as a release.
 
 ## Known boundaries
 

@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case features = "Features"
     case general = "General"
+    case remote = "Remote"
     case privacy = "Privacy"
     case alerts = "Alerts"
     case permissions = "Permissions"
@@ -17,6 +18,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .features: "square.grid.3x3.fill"
         case .general: "gear"
+        case .remote: "iphone.and.arrow.forward"
         case .privacy: "hand.raised"
         case .alerts: "bell.badge"
         case .permissions: "lock.shield"
@@ -437,7 +439,7 @@ struct SettingsView: View, @preconcurrency Equatable {
 
                 SettingsSection(title: "Data boundary") {
                     Label {
-                        Text("MacScope does not upload telemetry or expose a network-facing API. Exported files stay under your control.")
+                        Text("Remote access is disabled by default. When you enable it, MacScope sends only compact, redacted remote data through your configured relay; exports stay under your control.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     } icon: {
@@ -449,6 +451,9 @@ struct SettingsView: View, @preconcurrency Equatable {
 
                 case .alerts:
                     UsageAlertsSettingsView(model: model)
+
+                case .remote:
+                    RemoteSettingsView(model: model)
 
                 case .permissions:
                     SettingsPage(

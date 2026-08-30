@@ -39,5 +39,18 @@ hdiutil create \
   -ov \
   "$dmg_path"
 
+if [[ -n "${DEVELOPER_ID_APPLICATION:-}" ]]; then
+  keychain_arguments=()
+  if [[ -n "${MACOS_CI_KEYCHAIN:-}" ]]; then
+    keychain_arguments=(--keychain "$MACOS_CI_KEYCHAIN")
+  fi
+
+  codesign --force --timestamp \
+    "${keychain_arguments[@]}" \
+    --sign "$DEVELOPER_ID_APPLICATION" \
+    "$dmg_path"
+  codesign --verify --verbose=2 "$dmg_path"
+fi
+
 (cd "${dmg_path:h}" && shasum -a 256 "${dmg_path:t}") > "$dmg_path.sha256"
 echo "$dmg_path"

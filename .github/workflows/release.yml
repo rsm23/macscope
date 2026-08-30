@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   release:
-    name: Package arm64 app and notarize when configured
+    name: Package, sign, notarize, and verify arm64 release
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -28,10 +28,23 @@ jobs:
       CONFIGURATION: release
       REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
       HAS_DEVELOPER_ID: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' && secrets.DEVELOPER_ID_APPLICATION != '' }}
+      HAS_NOTARY_API_KEY: ${{ secrets.ASC_PRIVATE_KEY_BASE64 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' }}
+      HAS_NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID != '' && secrets.NOTARY_APP_PASSWORD != '' && secrets.NOTARY_TEAM_ID != '' }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require release signing and notarization configuration
+        run: |
+          if [[ "$HAS_DEVELOPER_ID" != "true" ]]; then
+            echo "Refusing to publish a Gatekeeper-rejected release: Developer ID certificate secrets are incomplete." >&2
+            exit 78
+          fi
+          if [[ "$HAS_NOTARY_API_KEY" != "true" && "$HAS_NOTARY_APPLE_ID" != "true" ]]; then
+            echo "Refusing to publish a Gatekeeper-rejected release: notarization credentials are incomplete." >&2
+            exit 78
+          fi
 
       - name: Show build environment
         run: |
@@ -54,7 +67,6 @@ jobs:
         run: ./Scripts/ci/set-release-version.sh "$REQUESTED_VERSION" "$GITHUB_RUN_NUMBER"
 
       - name: Import Developer ID certificate
-        if: env.HAS_DEVELOPER_ID == 'true'
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -74,7 +86,6 @@ jobs:
           codesign --display --verbose=4 dist/MacScope.app/Contents/Resources/MacScopeMCPServer
 
       - name: Notarize, staple, and archive application
-        if: env.HAS_DEVELOPER_ID == 'true'
         env:
           ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -87,16 +98,29 @@ jobs:
           dist/MacScope.app
           "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.zip"
 
-      - name: Archive development-signed application
-        if: env.HAS_DEVELOPER_ID != 'true'
-        run: >-
-          ./Scripts/ci/archive-app.sh
-          dist/MacScope.app
-          "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.zip"
-
       - name: Create drag-and-drop disk image
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
         run: >-
           ./Scripts/ci/create-dmg.sh
+          dist/MacScope.app
+          "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.dmg"
+
+      - name: Notarize and staple disk image
+        env:
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: >-
+          ./Scripts/ci/notarize-dmg.sh
+          "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.dmg"
+
+      - name: Verify Gatekeeper distribution
+        run: >-
+          ./Scripts/ci/verify-distribution.sh
           dist/MacScope.app
           "dist/MacScope-${MACSCOPE_RELEASE_VERSION}-arm64.dmg"
 
@@ -111,6 +135,8 @@ jobs:
             dist/MacScope-${{ steps.version.outputs.version }}-arm64.dmg.sha256
             dist/notarization-result.json
             dist/notarization-log.json
+            dist/dmg-notarization-result.json
+            dist/dmg-notarization-log.json
           if-no-files-found: error
           retention-days: 90
 
@@ -122,6 +148,8 @@ jobs:
           path: |
             dist/notarization-result.json
             dist/notarization-log.json
+            dist/dmg-notarization-result.json
+            dist/dmg-notarization-log.json
           if-no-files-found: ignore
           retention-days: 14
 
@@ -136,16 +164,10 @@ jobs:
           disk_image_checksum="$disk_image.sha256"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$disk_image" "$disk_image_checksum" "$archive" "$checksum" --clobber
-          elif [[ "$HAS_DEVELOPER_ID" == "true" ]]; then
-            gh release create "$GITHUB_REF_NAME" "$disk_image" "$disk_image_checksum" "$archive" "$checksum" \
-              --verify-tag \
-              --generate-notes \
-              --title "MacScope $MACSCOPE_RELEASE_VERSION"
           else
             gh release create "$GITHUB_REF_NAME" "$disk_image" "$disk_image_checksum" "$archive" "$checksum" \
               --verify-tag \
-              --prerelease \
-              --notes "Development-signed Apple-silicon preview for macOS 14 or newer. Open the DMG, drag MacScope to Applications, then Control-click MacScope and choose Open on first launch. This preview is not yet Apple-notarized." \
+              --generate-notes \
               --title "MacScope $MACSCOPE_RELEASE_VERSION"
           fi
 

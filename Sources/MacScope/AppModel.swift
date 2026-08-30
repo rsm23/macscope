@@ -46,6 +46,7 @@ final class AppModel {
     let displayControl = DisplayControlService()
     let cleaningMode = CleaningModeService()
     @ObservationIgnored private lazy var mcpUtilityController = MacScopeMCPUtilityController(model: self)
+    @ObservationIgnored private(set) lazy var remoteControl = MacScopeRemoteControlClient(controller: mcpUtilityController)
 
     private let engine: TelemetryEngine
     private let alertNotifications: UsageAlertNotificationController
@@ -79,6 +80,7 @@ final class AppModel {
                 for await alert in alertStream {
                     guard !Task.isCancelled else { return }
                     self?.alertNotifications.deliver(alert)
+                    self?.remoteControl.receive(alert: alert)
                 }
             }
             await engine.start()
@@ -95,6 +97,7 @@ final class AppModel {
                     self?.startupItems = snapshot.startupItems
                 }
                 self?.snapshot = snapshot
+                self?.remoteControl.receive(snapshot: snapshot)
                 self?.reconcileSelectedSection(with: snapshot)
                 // Charts never consume the heavy process/startup/socket
                 // collections. Keeping them in every in-memory history sample
@@ -114,6 +117,7 @@ final class AppModel {
         didStartAutomatically = true
         if UtilityFeatureStore.isEnabled(.capture) { screenshots.refresh() }
         start()
+        remoteControl.startIfEnabled()
     }
 
     func stop() {

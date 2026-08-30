@@ -1,0 +1,24 @@
+name = "macscope-remote"
+main = "src/worker.ts"
+compatibility_date = "2026-08-30"
+workers_dev = true
+
+[vars]
+PUBLIC_BASE_URL = "http://localhost:8787"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "macscope-remote"
+database_id = "replace-with-cloudflare-d1-database-id"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "EnvironmentRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["EnvironmentRoom"]
+
+[triggers]
+crons = ["17 3 * * *"]

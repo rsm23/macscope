@@ -60,6 +60,23 @@ final class MacScopeMCPUtilityController: NSObject {
         return (try? MacScopeMCPUtilityTransport.encode(response)) ?? Data()
     }
 
+    func remoteRun(
+        actionID: String,
+        arguments: [String: MacScopeMCPJSONValue]
+    ) throws -> MacScopeMCPJSONValue {
+        guard MacScopeMCPUtilityCatalog.action(id: actionID) != nil else {
+            throw ControllerError.invalidRequest("The requested action is not in the MacScope utility allowlist.")
+        }
+        return try run(actionID, arguments: arguments)
+    }
+
+    func remoteState(
+        module: MacScopeMCPUtilityModule,
+        includeSensitive: Bool = false
+    ) -> MacScopeMCPJSONValue {
+        state(module: module, includeSensitive: includeSensitive)
+    }
+
     private func run(
         _ action: String,
         arguments: [String: MacScopeMCPJSONValue]

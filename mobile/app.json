@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "MacScope Remote",
+    "slug": "macscope-remote",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "macscope",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seifelmoulouk.macscope.remote",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan one-time MacScope pairing QR codes.",
+        "NSFaceIDUsageDescription": "Confirm sensitive remote actions with Face ID."
+      }
+    },
+    "android": {
+      "package": "com.seifelmoulouk.macscope.remote",
+      "permissions": ["CAMERA", "POST_NOTIFICATIONS"],
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scan one-time MacScope pairing QR codes."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "macscope-alerts"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#071018",
+          "imageWidth": 96
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "replace-with-eas-project-id"
+      }
+    }
+  }
+}

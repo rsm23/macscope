@@ -4,6 +4,7 @@ import { Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRemote } from "@/remote/remote-provider";
 import type { UtilityAction } from "@/remote/types";
+import { utilityMatchesQuery } from "@/remote/utility-search";
 import { EmptyState, InlineNotice, ScreenHeader, SearchField, Tag } from "@/ui/primitives";
 import { useTheme } from "@/ui/theme";
 
@@ -22,9 +23,8 @@ export default function UtilitiesScreen() {
   const theme = useTheme();
   const [query, setQuery] = useState("");
   const sections = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
     const grouped = remote.utilities.reduce<Record<string, UtilityAction[]>>((result, action) => {
-      if (normalized && !`${action.title} ${action.summary} ${action.module}`.toLowerCase().includes(normalized)) return result;
+      if (!utilityMatchesQuery(action, query)) return result;
       (result[action.module] ??= []).push(action);
       return result;
     }, {});

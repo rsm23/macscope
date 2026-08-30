@@ -31,6 +31,19 @@ export default function UtilityDetailScreen() {
     return <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]}><EmptyState title="Utility unavailable" message="This action is no longer advertised by the connected Mac." /></SafeAreaView>;
   }
 
+  if (action.id === "maintenance.process-terminate") {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["bottom"]}>
+        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+          <ScreenHeader eyebrow={action.module} title={action.title} detail={action.summary} />
+          <View style={styles.tags}><Tag tone="danger">destructive</Tag></View>
+          <InlineNotice title="Choose a live process" message="MacScope supplies the exact PID and start identity from live telemetry so you never have to copy identifiers by hand." />
+          <ActionButton title="Open running processes" onPress={() => router.replace({ pathname: "/(tabs)/live", params: { mode: "processes" } })} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   const prepare = async () => {
     setBusy(true);
     setError(undefined);

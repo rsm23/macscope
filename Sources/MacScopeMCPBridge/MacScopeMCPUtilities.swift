@@ -274,11 +274,23 @@ public enum MacScopeMCPArtifactStore {
         let data = try handle.read(upToCount: boundedLength) ?? Data()
         let end = boundedOffset + Int64(data.count) >= match.artifact.byteCount
         return MacScopeMCPArtifactChunk(
-            artifact: match.artifact,
+            artifact: remoteMetadata(match.artifact),
             offset: boundedOffset,
             byteCount: data.count,
             endOfFile: end,
             base64: data.base64EncodedString()
+        )
+    }
+
+    static func remoteMetadata(_ artifact: MacScopeMCPArtifact) -> MacScopeMCPArtifact {
+        MacScopeMCPArtifact(
+            id: artifact.id,
+            kind: artifact.kind,
+            name: artifact.name,
+            mimeType: artifact.mimeType,
+            byteCount: artifact.byteCount,
+            modifiedAt: artifact.modifiedAt,
+            path: nil
         )
     }
 

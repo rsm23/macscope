@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { parseArgument } from "./arguments";
 import { parsePairingURL, webSocketURL } from "./urls";
 import { reconnectDelay, requireDeviceAuthentication, roleCanWrite } from "./security";
@@ -6,7 +7,8 @@ import { remoteStorage } from "./storage";
 import { notificationTarget } from "./notification-routing";
 import { newUUID, uuidFromRandomBytes } from "./ids";
 import { fieldsForAction, serializeArguments } from "./utility-form";
-import type { StoredEnvironment } from "./types";
+import { utilityMatchesQuery } from "./utility-search";
+import type { StoredEnvironment, UtilityAction } from "./types";
 
 const secureValues = vi.hoisted(() => new Map<string, string>());
 vi.mock("expo-secure-store", () => ({
@@ -61,6 +63,35 @@ describe("mobile remote boundaries", () => {
       mode: "full_screen", copy_to_clipboard: false, delay_seconds: 0,
     });
     expect(serializeArguments(fields, { mode: "selection", copy_to_clipboard: "", delay_seconds: "" })).toEqual({ mode: "selection" });
+  });
+
+  it("renders and serializes every argument in the 89-action Mac utility catalog", () => {
+    const actions = readMacUtilityCatalog();
+    expect(actions).toHaveLength(89);
+
+    for (const action of actions) {
+      const fields = fieldsForAction(action);
+      expect(fields.map((field) => field.name).sort(), action.id).toEqual(Object.keys(action.arguments).sort());
+      expect(fields.every((field) => field.question.length > 0 && field.description.length > 0), action.id).toBe(true);
+
+      const values = Object.fromEntries(fields.map((field) => [field.name, sampleValue(field)]));
+      const serialized = serializeArguments(fields, values);
+      expect(Object.keys(serialized).sort(), action.id).toEqual(fields.map((field) => field.name).sort());
+      for (const field of fields) {
+        const value = serialized[field.name];
+        if (field.kind === "boolean") expect(typeof value, `${action.id}:${field.name}`).toBe("boolean");
+        else if (field.kind === "number" || (field.kind === "choice" && field.numeric)) expect(typeof value, `${action.id}:${field.name}`).toBe("number");
+        else if (field.kind === "array") expect(Array.isArray(value), `${action.id}:${field.name}`).toBe(true);
+        else expect(typeof value, `${action.id}:${field.name}`).toBe("string");
+      }
+    }
+  });
+
+  it("matches non-contiguous words in utility search", () => {
+    const action = readMacUtilityCatalog().find((value) => value.id === "maintenance.process-terminate")!;
+    expect(utilityMatchesQuery(action, "terminate process")).toBe(true);
+    expect(utilityMatchesQuery(action, "maintenance terminate")).toBe(true);
+    expect(utilityMatchesQuery(action, "screenshot process")).toBe(false);
   });
 
   it("keeps UUIDs and device identifiers as text while typing numeric units", () => {
@@ -204,3 +235,25 @@ describe("mobile remote boundaries", () => {
     });
   });
 });
+
+function readMacUtilityCatalog(): UtilityAction[] {
+  const source = readFileSync(new URL("../../../Sources/MacScopeMCPBridge/MacScopeMCPUtilities.swift", import.meta.url), "utf8");
+  return source.split("\n").flatMap((line): UtilityAction[] => {
+    const match = line.match(/\.init\(id: "([^"]+)", module: \.([a-z]+), title: "([^"]+)", summary: "([^"]+)"(?:, arguments: \[(.*?)\])?/u);
+    if (!match) return [];
+    const argumentsBlock = match[5] ?? "";
+    const argumentsRecord = Object.fromEntries(Array.from(argumentsBlock.matchAll(/"([^"]+)": "([^"]+)"/gu), (value) => [value[1], value[2]]));
+    return [{
+      id: match[1]!, module: match[2]!, title: match[3]!, summary: match[4]!, arguments: argumentsRecord,
+      risk: "read_only", allowed: true, requiresDeviceAuthentication: false, producesArtifact: false, requiredPermissions: [],
+    }];
+  });
+}
+
+function sampleValue(field: ReturnType<typeof fieldsForAction>[number]): string | boolean {
+  if (field.kind === "boolean") return true;
+  if (field.kind === "number") return String(field.exclusiveMin ? 1 : field.min ?? 1);
+  if (field.kind === "choice") return field.options.find((option) => option.value !== "")?.value ?? "value";
+  if (field.kind === "array") return "/tmp/macscope-test-item";
+  return "value";
+}

@@ -1,4 +1,4 @@
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -14,9 +14,11 @@ const detailSections: SnapshotSection[][] = [
 ];
 
 export default function LiveScreen() {
+  const { mode: requestedMode } = useLocalSearchParams<{ mode?: Mode }>();
   const remote = useRemote();
   const theme = useTheme();
-  const [mode, setMode] = useState<Mode>("metrics");
+  const mode: Mode = requestedMode === "processes" ? "processes" : "metrics";
+  const setMode = useCallback((value: Mode) => router.setParams({ mode: value }), []);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();

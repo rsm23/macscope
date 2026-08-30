@@ -163,7 +163,7 @@ struct MacScopeMCPGatewayTests {
     @Test("Utility catalog covers every module with unique executable IDs")
     func utilityCatalogCoverage() {
         let actions = MacScopeMCPUtilityCatalog.actions
-        #expect(actions.count >= 75)
+        #expect(actions.count == 89)
         #expect(Set(actions.map(\.id)).count == actions.count)
         for module in MacScopeMCPUtilityModule.allCases {
             #expect(actions.contains { $0.module == module })
@@ -172,6 +172,51 @@ struct MacScopeMCPGatewayTests {
         #expect(actions.contains { $0.id == "capture.recording-start" && !$0.producesArtifact })
         #expect(actions.contains { $0.id == "capture.recording-stop" && $0.producesArtifact })
         #expect(actions.contains { $0.id == "clipboard.move-shelf-files" && $0.destructive })
+    }
+
+    @Test("Every catalogued utility has an application executor")
+    func utilityExecutorCoverage() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let controllerURL = repository.appendingPathComponent("Sources/MacScope/MCPUtilityController.swift")
+        let source = try String(contentsOf: controllerURL, encoding: .utf8)
+        let runStart = try #require(source.range(of: "private func run("))
+        let stateStart = try #require(source.range(
+            of: "private func state(",
+            range: runStart.upperBound..<source.endIndex
+        ))
+        let executorSource = String(source[runStart.lowerBound..<stateStart.lowerBound])
+        let expression = try NSRegularExpression(pattern: #"(?m)^        case "([^"]+)":"#)
+        let sourceRange = NSRange(executorSource.startIndex..<executorSource.endIndex, in: executorSource)
+        let executorIDs = Set(expression.matches(in: executorSource, range: sourceRange).compactMap { match -> String? in
+            guard let range = Range(match.range(at: 1), in: executorSource) else { return nil }
+            return String(executorSource[range])
+        })
+        let catalogIDs = Set(MacScopeMCPUtilityCatalog.actions.map(\.id))
+
+        #expect(executorIDs == catalogIDs)
+    }
+
+    @Test("Remote artifact chunks never expose a local Mac path")
+    func remoteArtifactMetadataIsRedacted() {
+        let artifact = MacScopeMCPArtifact(
+            id: "capture-id",
+            kind: .screenshot,
+            name: "capture.png",
+            mimeType: "image/png",
+            byteCount: 42,
+            modifiedAt: Date(timeIntervalSince1970: 1_000),
+            path: "/Users/person/Pictures/private/capture.png"
+        )
+
+        let remote = MacScopeMCPArtifactStore.remoteMetadata(artifact)
+
+        #expect(remote.id == artifact.id)
+        #expect(remote.name == artifact.name)
+        #expect(remote.byteCount == artifact.byteCount)
+        #expect(remote.path == nil)
     }
 
     @Test("Utility execution is opt-in and forwards only catalogued actions")

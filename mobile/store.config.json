@@ -1,0 +1,41 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "copyright": "2026 Rahmani Seif El Moulouk",
+    "categories": ["UTILITIES", "PRODUCTIVITY"],
+    "info": {
+      "en-US": {
+        "title": "MacScope Remote",
+        "subtitle": "Monitor and control your Mac",
+        "description": "Keep an eye on your Mac and run approved actions from iPhone or iPad with MacScope Remote. Pair once with the MacScope app on your Mac to see live system health, browse redacted system details, review processes, and reach a focused library of captures and clipboard items.\n\nLIVE MAC HEALTH\n• Follow CPU, memory, network, storage, thermal, battery, and process activity\n• Browse requested redacted snapshots without exposing an inbound port on your Mac\n• Get optional alerts when your Mac needs attention\n\nSAFE REMOTE CONTROL\n• Search the utilities made available by the paired Mac\n• Review the exact action and its risk before it runs\n• Confirm sensitive actions with Face ID, Touch ID, or your device passcode\n• Use viewer, operator, and owner roles for the right level of access\n\nPRIVATE BY DESIGN\n• Live telemetry is forwarded while you watch and is not stored by the relay\n• Commands expire quickly, are never queued while the Mac is offline, and must pass the Mac's local allowlist\n• Pairing credentials stay in Keychain or SecureStore\n• Reset Remote on the Mac at any time to revoke every paired device\n\nMacScope Remote requires the MacScope desktop app on an Apple-silicon Mac running macOS 14 or newer. Remote access is opt-in and must be enabled from the Mac.",
+        "keywords": ["mac,remote,system monitor,cpu,memory,network,utility,telemetry,process,control,private"],
+        "releaseNotes": "MacScope Remote 0.2 introduces the secure mobile companion for MacScope with live health metrics, redacted system views, searchable utilities, captures, clipboard access, optional alerts, and role-based approvals.",
+        "promoText": "Live Mac health and approved controls from iPhone or iPad, with short-lived commands and no stored telemetry stream.",
+        "privacyPolicyUrl": "https://macscope.seifelmoulouk.com/privacy.html",
+        "supportUrl": "https://macscope.seifelmoulouk.com/support.html",
+        "marketingUrl": "https://macscope.seifelmoulouk.com/#remote"
+      }
+    },
+    "advisory": {
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "gamblingSimulated": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "matureOrSuggestiveThemes": "NONE",
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "seventeenPlus": false
+    },
+    "release": {
+      "automaticRelease": false,
+      "phasedRelease": true
+    }
+  }
+}

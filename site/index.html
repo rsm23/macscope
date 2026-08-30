@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="MacScope is a native Apple-silicon system monitor, process manager, and power-user toolkit for macOS 14+."
+      content="MacScope is a native Apple-silicon system monitor, process manager, power-user toolkit, and secure iOS and Android remote companion."
     />
     <meta name="theme-color" content="#03070c" />
     <meta property="og:title" content="MacScope — See your Mac. Shape how it works." />
@@ -53,6 +53,7 @@
         <a href="#utilities">Utilities</a>
         <a href="#toolkit">Toolkit</a>
         <a href="#features">Features</a>
+        <a href="#remote">Remote</a>
         <a href="#download-status">
           Download
         </a>
@@ -321,6 +322,40 @@
         </div>
       </section>
 
+      <section class="remote section" id="remote" aria-labelledby="remote-title">
+        <div class="remote__copy section-copy">
+          <p class="section-index reveal">06 / REMOTE</p>
+          <h2 id="remote-title" class="reveal">Your Mac.<br />Still within reach.</h2>
+          <p class="section-intro reveal">
+            Pair MacScope Remote once, then check live health, browse redacted system data,
+            and run only the actions your Mac explicitly allows — from iPhone or Android.
+          </p>
+          <ul class="remote__principles" aria-label="MacScope Remote safeguards">
+            <li class="reveal"><strong>Live, not logged</strong><span>The relay forwards telemetry while you watch and never stores the live stream.</span></li>
+            <li class="reveal"><strong>Permissioned by design</strong><span>Viewer, operator, and owner roles meet a local Mac allowlist before anything can change.</span></li>
+            <li class="reveal"><strong>Nothing waits offline</strong><span>Commands expire in seconds and are never queued for a later surprise.</span></li>
+          </ul>
+          <div class="remote__availability reveal" aria-label="Mobile availability">
+            <span class="platform-chip">iOS</span>
+            <span class="platform-chip">Android</span>
+            <span class="platform-note">Store listings in preparation</span>
+          </div>
+        </div>
+
+        <div class="remote__visual reveal-media" aria-label="MacScope Remote pairing screen on iPhone">
+          <div class="remote-signal" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <div class="remote-callout remote-callout--top" aria-hidden="true">
+            <span>One-time QR</span><strong>Owner pairing</strong>
+          </div>
+          <figure class="phone phone--pairing">
+            <img src="assets/macscope-remote-pairing.png" width="1320" height="2868" alt="MacScope Remote one-time QR pairing screen on iPhone" loading="lazy" />
+          </figure>
+          <div class="remote-callout remote-callout--bottom" aria-hidden="true">
+            <span>Relay status</span><strong>Live only · no telemetry log</strong>
+          </div>
+        </div>
+      </section>
+
       <section class="trust" aria-label="Privacy and telemetry principles">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></svg>
         <p>Local by default. Explicit permissions. No invented telemetry.</p>
@@ -332,7 +367,7 @@
         </svg>
         <div class="final-cta__inner">
           <img class="final-cta__icon reveal" src="assets/macscope-app-icon.png" alt="" />
-          <p class="section-index reveal">06 / MACSCOPE</p>
+          <p class="section-index reveal">07 / MACSCOPE</p>
           <h2 id="cta-title" class="reveal">Know more. Reach less.</h2>
           <p class="reveal">
             The system monitor and the toolbox, together in one fast, private, native app.
@@ -363,6 +398,8 @@
         <a href="https://github.com/rsm23/macscope" target="_blank" rel="noreferrer">GitHub</a>
         <a href="https://github.com/rsm23/macscope/blob/main/docs/MCP_SERVER.md" target="_blank" rel="noreferrer">MCP Server</a>
         <a href="https://github.com/rsm23/macscope#security-model" target="_blank" rel="noreferrer">Security</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="support.html">Support</a>
         <a href="https://github.com/rsm23/macscope#build-and-test" target="_blank" rel="noreferrer">Build guide</a>
       </nav>
       <p>Built natively for macOS 14+ on Apple silicon.</p>

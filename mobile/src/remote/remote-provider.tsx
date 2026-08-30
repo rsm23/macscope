@@ -75,7 +75,7 @@ interface RemoteContextValue {
   setNotifications(value: NotificationPreferences): Promise<void>;
   refreshUtilityState(module: string): Promise<unknown>;
   refreshArtifacts(kind?: RemoteArtifact["kind"]): Promise<RemoteArtifact[]>;
-  downloadArtifact(artifact: RemoteArtifact): Promise<string>;
+  downloadArtifact(artifact: RemoteArtifact, force?: boolean): Promise<string>;
   refreshLiveData(sections: SnapshotSection[], options?: { processLimit?: number; processQuery?: string; collectionLimit?: number }): Promise<LiveDataDocument>;
 }
 
@@ -121,6 +121,8 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
   const stateResolvers = useRef(new Map<string, PendingResolver<unknown>>());
   const artifactListResolvers = useRef(new Map<string, PendingResolver<RemoteArtifact[]>>());
   const artifactChunkResolvers = useRef(new Map<string, PendingResolver<ArtifactChunk>>());
+  const artifactDownloadsRef = useRef<Record<string, ArtifactDownload>>({});
+  const artifactDownloadPromises = useRef(new Map<string, Promise<string>>());
   const snapshotResolvers = useRef(new Map<string, PendingResolver<LiveDataDocument>>());
 
   const activeEnvironment = environments.find((value) => value.environmentID === activeID);
@@ -434,7 +436,12 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
           role: activeEnvironment?.role ?? "viewer",
           actionID,
           arguments: args,
-          expiresAt: new Date(Date.now() + 15_000).toISOString(),
+          // A device-authentication prompt can easily outlive a 15-second
+          // request window, especially on Simulator or after the first Face ID
+          // enrollment. Keep the Mac-side approval lifetime (two minutes) as
+          // the source of truth so a freshly prepared command does not arrive
+          // at the confirmation sheet already expired.
+          expiresAt: new Date(Date.now() + 120_000).toISOString(),
         }, envelopeID);
       } catch (reason) {
         clearTimeout(timeout);
@@ -451,7 +458,7 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
       commandID: command.commandID,
       approvalToken: command.approvalToken,
       confirmation: command.confirmation,
-      expiresAt: new Date(Date.now() + 15_000).toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
   }, [send]);
 
@@ -497,11 +504,18 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
     return values;
   }, [send]);
 
-  const downloadArtifact = useCallback(async (artifact: RemoteArtifact) => {
-    const existing = artifactDownloads[artifact.id]?.uri;
-    if (existing) return existing;
-    setArtifactDownloads((values) => ({ ...values, [artifact.id]: { progress: 0, downloading: true } }));
-    try {
+  const downloadArtifact = useCallback((artifact: RemoteArtifact, force = false): Promise<string> => {
+    const updateDownload = (value: ArtifactDownload) => {
+      artifactDownloadsRef.current = { ...artifactDownloadsRef.current, [artifact.id]: value };
+      setArtifactDownloads(artifactDownloadsRef.current);
+    };
+    const existing = artifactDownloadsRef.current[artifact.id]?.uri;
+    if (existing && !force) return Promise.resolve(existing);
+    const inFlight = artifactDownloadPromises.current.get(artifact.id);
+    if (inFlight) return inFlight;
+
+    const task = (async () => {
+      updateDownload({ progress: 0, downloading: true });
       const directory = new Directory(Paths.cache, "macscope-remote-artifacts");
       if (!directory.exists) directory.create({ intermediates: true });
       const safeName = artifact.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -519,20 +533,26 @@ export function RemoteProvider({ children }: { children: React.ReactNode }) {
         );
         file.write(chunk.base64, { encoding: EncodingType.Base64, append: offset > 0 });
         offset += chunk.byteCount;
-        setArtifactDownloads((values) => ({
-          ...values,
-          [artifact.id]: { progress: Math.min(offset / Math.max(artifact.byteCount, 1), 1), downloading: !chunk.endOfFile },
-        }));
+        updateDownload({ progress: Math.min(offset / Math.max(artifact.byteCount, 1), 1), downloading: !chunk.endOfFile });
         if (chunk.endOfFile || chunk.byteCount === 0) break;
       }
-      setArtifactDownloads((values) => ({ ...values, [artifact.id]: { uri: file.uri, progress: 1, downloading: false } }));
+      const downloadedSize = file.size;
+      if (downloadedSize !== artifact.byteCount) {
+        file.delete();
+        throw new Error(`The downloaded capture failed its size check (${downloadedSize} of ${artifact.byteCount} bytes).`);
+      }
+      updateDownload({ uri: file.uri, progress: 1, downloading: false });
       return file.uri;
-    } catch (reason) {
+    })().catch((reason) => {
       const message = reason instanceof Error ? reason.message : "The artifact could not be downloaded.";
-      setArtifactDownloads((values) => ({ ...values, [artifact.id]: { progress: 0, downloading: false, error: message } }));
+      updateDownload({ progress: 0, downloading: false, error: message });
       throw reason;
-    }
-  }, [artifactDownloads, send]);
+    }).finally(() => {
+      artifactDownloadPromises.current.delete(artifact.id);
+    });
+    artifactDownloadPromises.current.set(artifact.id, task);
+    return task;
+  }, [send]);
 
   const refreshLiveData = useCallback(async (sections: SnapshotSection[], options: { processLimit?: number; processQuery?: string; collectionLimit?: number } = {}) => {
     const document = await requestReply(

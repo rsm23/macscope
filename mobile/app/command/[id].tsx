@@ -36,6 +36,7 @@ export default function CommandResultScreen() {
         if (match) {
           setArtifact(match);
           if (match.kind === "screenshot" && match.byteCount <= 20 * 1024 * 1024) await downloadArtifact(match);
+          if (!cancelled) setPreviewError(undefined);
           return;
         }
       } catch (reason) {
@@ -68,7 +69,7 @@ export default function CommandResultScreen() {
       {live?.accepted && artifactAction ? (
         <Card>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Returned capture</Text>
-          {artifact && download?.uri && artifact.kind === "screenshot" ? <Image source={download.uri} contentFit="contain" transition={180} style={[styles.preview, { backgroundColor: theme.subtle }]} /> : null}
+          {artifact && download?.uri && artifact.kind === "screenshot" ? <Image source={download.uri} cachePolicy="none" contentFit="contain" transition={180} style={[styles.preview, { backgroundColor: theme.subtle }]} /> : null}
           {artifact ? <><Text selectable style={[styles.artifactName, { color: theme.text }]}>{artifact.name}</Text><Text style={[styles.time, { color: theme.secondary }]}>{formatBytes(artifact.byteCount)} · available in Library</Text></> : <Text style={[styles.waiting, { color: theme.secondary }]}>Waiting for the Mac to finish writing the file…</Text>}
           {download?.downloading ? <Text style={[styles.waiting, { color: theme.accent }]}>Loading preview… {Math.round(download.progress * 100)}%</Text> : null}
           {previewError ? <InlineNotice title="Preview unavailable" message={previewError} tone="warning" /> : null}

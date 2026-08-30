@@ -26,7 +26,7 @@ export default function RootLayout() {
           <Stack.Screen name="pair" options={{ title: "Pair a Mac", presentation: "modal" }} />
           <Stack.Screen name="confirm" options={{ title: "Confirm action", presentation: "formSheet", sheetGrabberVisible: true, sheetAllowedDetents: [0.6, 1] }} />
           <Stack.Screen name="utility/[id]" options={{ title: "Utility" }} />
-          <Stack.Screen name="command/[id]" options={{ title: "Command result" }} />
+          <Stack.Screen name="command/[id]" options={{ title: "Command result", headerTransparent: false, headerStyle: { backgroundColor: theme.background } }} />
           <Stack.Screen name="features" options={{ title: "Features & preferences" }} />
         </Stack>
       </RemoteProvider>

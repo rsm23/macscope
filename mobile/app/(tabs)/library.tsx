@@ -63,7 +63,7 @@ function ArtifactCard({ artifact, eager }: { artifact: RemoteArtifact; eager: bo
   const downloadArtifact = remote.downloadArtifact;
   const load = async () => {
     setError(undefined);
-    try { await downloadArtifact(artifact); }
+    try { await downloadArtifact(artifact, Boolean(download?.uri)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The capture could not be loaded."); }
   };
   useEffect(() => {
@@ -79,7 +79,7 @@ function ArtifactCard({ artifact, eager }: { artifact: RemoteArtifact; eager: bo
   };
   return (
     <Card>
-      {download?.uri && artifact.kind !== "recording" ? <Image source={download.uri} contentFit="contain" transition={180} style={[styles.image, { backgroundColor: theme.subtle }]} /> : null}
+      {download?.uri && artifact.kind !== "recording" ? <Image source={download.uri} cachePolicy="none" contentFit="contain" transition={180} style={[styles.image, { backgroundColor: theme.subtle }]} /> : null}
       {download?.uri && artifact.kind === "recording" ? <VideoPreview uri={download.uri} /> : null}
       <View style={styles.artifactHeader}><View style={styles.artifactCopy}><Text selectable numberOfLines={2} style={[styles.artifactTitle, { color: theme.text }]}>{artifact.name}</Text><Text style={[styles.meta, { color: theme.secondary }]}>{formatBytes(artifact.byteCount)} · {new Date(artifact.modifiedAt).toLocaleString()}</Text></View><Tag tone="accent">{artifact.kind}</Tag></View>
       {download?.downloading ? <Text style={[styles.meta, { color: theme.accent }]}>Loading… {Math.round(download.progress * 100)}%</Text> : null}

@@ -1,8 +1,9 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRemote } from "@/remote/remote-provider";
 import type { RemoteArtifact } from "@/remote/types";
+import { CapturePreview } from "@/ui/capture-preview";
 import { ActionButton, Card, InlineNotice, ScreenHeader, Tag } from "@/ui/primitives";
 import { useTheme } from "@/ui/theme";
 
@@ -17,7 +18,6 @@ export default function CommandResultScreen() {
   const artifactAction = expectsArtifact(live?.actionID ?? actionID);
   const [artifact, setArtifact] = useState<RemoteArtifact>();
   const [previewError, setPreviewError] = useState<string>();
-  const [loadedPreviewURI, setLoadedPreviewURI] = useState<string>();
   const download = artifact ? remote.artifactDownloads[artifact.id] : undefined;
   const macOnline = remote.macOnline;
   const refreshArtifacts = remote.refreshArtifacts;
@@ -73,19 +73,7 @@ export default function CommandResultScreen() {
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Returned capture</Text>
           {artifact ? <><Text selectable style={[styles.artifactName, { color: theme.text }]}>{artifact.name}</Text><Text style={[styles.time, { color: theme.secondary }]}>{formatBytes(artifact.byteCount)} · available in Library</Text></> : <Text style={[styles.waiting, { color: theme.secondary }]}>Waiting for the Mac to finish writing the file…</Text>}
           {download?.downloading ? <Text style={[styles.waiting, { color: theme.accent }]}>Loading preview… {Math.round(download.progress * 100)}%</Text> : null}
-          {previewURI ? (
-            <View style={[styles.preview, { backgroundColor: theme.subtle }]}>
-              <Image
-                source={{ uri: previewURI }}
-                resizeMode="contain"
-                fadeDuration={180}
-                onLoad={() => { setLoadedPreviewURI(previewURI); setPreviewError(undefined); }}
-                onError={() => setPreviewError("The capture downloaded, but iOS could not decode its preview. Open Library to reload it.")}
-                style={styles.previewImage}
-              />
-              {loadedPreviewURI !== previewURI && !previewError ? <Text style={[styles.previewStatus, { color: theme.secondary }]}>Preparing preview…</Text> : null}
-            </View>
-          ) : null}
+          {previewURI ? <CapturePreview uri={previewURI} onError={setPreviewError} /> : null}
           {previewError ? <InlineNotice title="Preview unavailable" message={previewError} tone="warning" /> : null}
           <ActionButton title="Open Library" onPress={() => router.replace("/(tabs)/library")} />
         </Card>
@@ -102,5 +90,5 @@ function friendlyAction(value?: string): string { if (!value) return "Remote com
 function formatBytes(value: number): string { return value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(value / 1024))} KB`; }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1 }, content: { padding: 18, gap: 17, paddingBottom: 42 }, resultHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }, time: { fontSize: 11 }, actionTitle: { fontSize: 20, lineHeight: 25, fontWeight: "800", letterSpacing: -0.4 }, commandID: { fontSize: 10, fontFamily: process.env.EXPO_OS === "ios" ? "Menlo" : "monospace" }, sectionTitle: { fontSize: 17, fontWeight: "800" }, preview: { width: "100%", aspectRatio: 16 / 10, borderRadius: 12, overflow: "hidden", alignItems: "center", justifyContent: "center" }, previewImage: { position: "absolute", inset: 0, width: "100%", height: "100%" }, previewStatus: { fontSize: 12, lineHeight: 17 }, artifactName: { fontSize: 14, fontWeight: "700" }, waiting: { fontSize: 12, lineHeight: 17 }, privacy: { fontSize: 11, lineHeight: 16, textAlign: "center" },
+  scroll: { flex: 1 }, content: { padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }, resultHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }, time: { fontSize: 11 }, actionTitle: { fontSize: 20, lineHeight: 25, fontWeight: "800", letterSpacing: -0.4 }, commandID: { fontSize: 10, fontFamily: process.env.EXPO_OS === "ios" ? "Menlo" : "monospace" }, sectionTitle: { fontSize: 17, fontWeight: "800" }, artifactName: { fontSize: 14, fontWeight: "700" }, waiting: { fontSize: 12, lineHeight: 18 }, privacy: { fontSize: 11, lineHeight: 17, textAlign: "center" },
 });

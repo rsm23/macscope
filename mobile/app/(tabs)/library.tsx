@@ -1,5 +1,4 @@
 import * as Clipboard from "expo-clipboard";
-import { Image } from "expo-image";
 import * as Sharing from "expo-sharing";
 import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -8,6 +7,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRemote } from "@/remote/remote-provider";
 import type { RemoteArtifact } from "@/remote/types";
+import { CapturePreview } from "@/ui/capture-preview";
 import { ActionButton, Card, EmptyState, InlineNotice, ScreenHeader, SectionLabel, Tag } from "@/ui/primitives";
 import { palette, useTheme } from "@/ui/theme";
 
@@ -79,7 +79,7 @@ function ArtifactCard({ artifact, eager }: { artifact: RemoteArtifact; eager: bo
   };
   return (
     <Card>
-      {download?.uri && artifact.kind !== "recording" ? <Image source={download.uri} cachePolicy="none" contentFit="contain" transition={180} style={[styles.image, { backgroundColor: theme.subtle }]} /> : null}
+      {download?.uri && artifact.kind !== "recording" ? <CapturePreview uri={download.uri} onError={setError} /> : null}
       {download?.uri && artifact.kind === "recording" ? <VideoPreview uri={download.uri} /> : null}
       <View style={styles.artifactHeader}><View style={styles.artifactCopy}><Text selectable numberOfLines={2} style={[styles.artifactTitle, { color: theme.text }]}>{artifact.name}</Text><Text style={[styles.meta, { color: theme.secondary }]}>{formatBytes(artifact.byteCount)} · {new Date(artifact.modifiedAt).toLocaleString()}</Text></View><Tag tone="accent">{artifact.kind}</Tag></View>
       {download?.downloading ? <Text style={[styles.meta, { color: theme.accent }]}>Loading… {Math.round(download.progress * 100)}%</Text> : null}
@@ -117,5 +117,5 @@ function dateLabel(value: string): string { const date = new Date(value); return
 function formatBytes(value: number): string { return value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : value >= 1024 ? `${Math.round(value / 1024)} KB` : `${value} B`; }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 42, gap: 17 }, image: { width: "100%", aspectRatio: 16 / 10, borderRadius: 12 }, video: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12, backgroundColor: palette.ink }, artifactHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 }, artifactCopy: { flex: 1, gap: 4 }, artifactTitle: { fontSize: 15, lineHeight: 20, fontWeight: "700" }, meta: { fontSize: 11, lineHeight: 15 }, actions: { flexDirection: "row", gap: 9 }, flex: { flex: 1 }, clipboard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, borderCurve: "continuous", padding: 15, gap: 10 }, clipboardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }, clipboardText: { fontSize: 14, lineHeight: 20 }, copyHint: { fontSize: 11, fontWeight: "700" },
+  safe: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 48, gap: 22 }, video: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12, backgroundColor: palette.ink }, artifactHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 }, artifactCopy: { flex: 1, gap: 5 }, artifactTitle: { fontSize: 15, lineHeight: 21, fontWeight: "700" }, meta: { fontSize: 11, lineHeight: 16 }, actions: { flexDirection: "row", gap: 10 }, flex: { flex: 1 }, clipboard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, borderCurve: "continuous", padding: 16, gap: 13 }, clipboardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }, clipboardText: { fontSize: 14, lineHeight: 21 }, copyHint: { fontSize: 11, fontWeight: "700" },
 });

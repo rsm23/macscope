@@ -8,6 +8,7 @@ import { notificationTarget } from "./notification-routing";
 import { newUUID, uuidFromRandomBytes } from "./ids";
 import { fieldsForAction, serializeArguments } from "./utility-form";
 import { utilityMatchesQuery } from "./utility-search";
+import { applicationSections, applicationsFromWindowsState, canQuitApplication, filterApplications } from "./applications";
 import type { StoredEnvironment, UtilityAction } from "./types";
 
 const secureValues = vi.hoisted(() => new Map<string, string>());
@@ -65,9 +66,9 @@ describe("mobile remote boundaries", () => {
     expect(serializeArguments(fields, { mode: "selection", copy_to_clipboard: "", delay_seconds: "" })).toEqual({ mode: "selection" });
   });
 
-  it("renders and serializes every argument in the 89-action Mac utility catalog", () => {
+  it("renders and serializes every argument in the 91-action Mac utility catalog", () => {
     const actions = readMacUtilityCatalog();
-    expect(actions).toHaveLength(89);
+    expect(actions).toHaveLength(91);
 
     for (const action of actions) {
       const fields = fieldsForAction(action);
@@ -85,6 +86,36 @@ describe("mobile remote boundaries", () => {
         else expect(typeof value, `${action.id}:${field.name}`).toBe("string");
       }
     }
+  });
+
+  it("merges installed and running applications for mobile lifecycle controls", () => {
+    const applications = applicationsFromWindowsState({
+      installed_applications: [
+        { name: "Safari", bundle_identifier: "com.apple.Safari" },
+        { name: "Notes", bundle_identifier: "com.apple.Notes" },
+      ],
+      applications: [
+        { name: "Safari", bundle_identifier: "com.apple.Safari", pid: 42, active: true, hidden: false },
+        { name: "Terminal", bundle_identifier: "com.apple.Terminal", pid: 84, active: false, hidden: true },
+      ],
+    });
+
+    expect(applications.map((value) => [value.name, value.running, value.active])).toEqual([
+      ["Safari", true, true],
+      ["Terminal", true, false],
+      ["Notes", false, false],
+    ]);
+    expect(filterApplications(applications, "apple notes").map((value) => value.name)).toEqual(["Notes"]);
+    expect(filterApplications(applications, "84 terminal").map((value) => value.name)).toEqual(["Terminal"]);
+    expect(applicationSections(applications, "").map((section) => [section.key, section.data.map((value) => value.name)])).toEqual([
+      ["running", ["Safari", "Terminal"]],
+      ["installed", ["Notes"]],
+    ]);
+  });
+
+  it("never offers a remote quit action for Finder", () => {
+    expect(canQuitApplication({ id: "finder", name: "Finder", bundleIdentifier: "com.apple.finder", pid: 99, running: true, active: true, hidden: false })).toBe(false);
+    expect(canQuitApplication({ id: "notes", name: "Notes", bundleIdentifier: "com.apple.Notes", pid: 42, running: true, active: false, hidden: false })).toBe(true);
   });
 
   it("matches non-contiguous words in utility search", () => {

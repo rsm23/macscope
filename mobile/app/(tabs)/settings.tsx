@@ -26,7 +26,7 @@ export default function SettingsScreen() {
 
   if (!remote.activeEnvironment) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18 }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 22 }}>
         <EmptyState title="No paired Mac" message="Pair the first Mac to configure notifications, members, and stored environments." />
         <Link href="/pair" asChild><Pressable><Text style={{ color: palette.cyan, textAlign: "center", fontWeight: "800" }}>Pair a Mac</Text></Pressable></Link>
       </ScrollView>
@@ -38,7 +38,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18, paddingBottom: 36 }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }}>
       <SectionLabel>Paired Macs</SectionLabel>
       <Card style={{ padding: 0, gap: 0, overflow: "hidden" }}>
         {remote.environments.map((environment, index) => {

@@ -3,12 +3,12 @@
     "name": "MacScope Remote",
     "slug": "macscope-remote",
     "owner": "rsm23",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Securely monitor and control a paired Mac running MacScope.",
-    "icon": "../Resources/AppIcon.png",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "scheme": "macscope",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "appleTeamId": "WQ983X3Y8P",
@@ -21,6 +21,10 @@
     },
     "android": {
       "package": "com.seifelmoulouk.macscope.remote",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#071018"
+      },
       "permissions": [
         "CAMERA",
         "POST_NOTIFICATIONS"
@@ -48,7 +52,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#071018",
-          "image": "../Resources/AppIcon.png",
+          "image": "./assets/adaptive-icon.png",
           "imageWidth": 96
         }
       ],

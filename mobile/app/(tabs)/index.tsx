@@ -26,7 +26,7 @@ export default function OverviewScreen() {
 
   if (!remote.activeEnvironment) {
     return (
-      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18, flexGrow: 1, justifyContent: "center" }}>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 22, flexGrow: 1, justifyContent: "center" }}>
         <EmptyState title="Pair your Mac" message="Open MacScope → Settings → Remote, then scan the one-time owner QR code." />
         <ActionButton title="Scan pairing QR" onPress={() => router.push("/pair")} />
       </ScrollView>
@@ -34,7 +34,7 @@ export default function OverviewScreen() {
   }
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18, paddingBottom: 36 }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }}>
       <Card style={{ backgroundColor: theme.dark ? "#0D2732" : "#E5FAFA" }}>
         <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <View style={{ flex: 1, gap: 5 }}>

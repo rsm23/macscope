@@ -33,7 +33,7 @@ export default function FeaturesScreen() {
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18, paddingBottom: 36 }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }}>
       {error ? <Card style={{ borderColor: "rgba(255,125,125,0.35)" }}><Text selectable style={{ color: palette.red }}>{error}</Text></Card> : null}
       {remote.features.length === 0 ? (
         <EmptyState title="No feature state yet" message={remote.macOnline ? "MacScope is refreshing its supported feature catalog." : "Open MacScope on the paired Mac to inspect and manage features."} />

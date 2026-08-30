@@ -163,7 +163,7 @@ struct MacScopeMCPGatewayTests {
     @Test("Utility catalog covers every module with unique executable IDs")
     func utilityCatalogCoverage() {
         let actions = MacScopeMCPUtilityCatalog.actions
-        #expect(actions.count == 89)
+        #expect(actions.count == 91)
         #expect(Set(actions.map(\.id)).count == actions.count)
         for module in MacScopeMCPUtilityModule.allCases {
             #expect(actions.contains { $0.module == module })
@@ -172,6 +172,8 @@ struct MacScopeMCPGatewayTests {
         #expect(actions.contains { $0.id == "capture.recording-start" && !$0.producesArtifact })
         #expect(actions.contains { $0.id == "capture.recording-stop" && $0.producesArtifact })
         #expect(actions.contains { $0.id == "clipboard.move-shelf-files" && $0.destructive })
+        #expect(actions.contains { $0.id == "windows.launch-app" && !$0.destructive })
+        #expect(actions.contains { $0.id == "windows.quit-app" && $0.destructive })
     }
 
     @Test("Every catalogued utility has an application executor")

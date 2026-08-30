@@ -87,7 +87,7 @@ final class MacScopeRemoteControlClient {
     static let allowMacOSFeatureWritesKey = "remote.allowMacOSFeatureWrites"
     static let allowedUtilityActionsKey = "remote.allowedUtilityActions"
     private static let allowedUtilityCatalogVersionKey = "remote.allowedUtilityCatalogVersion"
-    private static let allowedUtilityCatalogVersion = 2
+    private static let allowedUtilityCatalogVersion = 3
     static let notifyAlertsKey = "remote.notifyAlerts"
     static let notifyPresenceKey = "remote.notifyPresence"
     static let notifyCommandsKey = "remote.notifyCommands"
@@ -199,8 +199,12 @@ final class MacScopeRemoteControlClient {
         let version = UserDefaults.standard.integer(forKey: allowedUtilityCatalogVersionKey)
         if version < 2, values.count == 88 {
             values.insert("maintenance.process-terminate")
-            setAllowedUtilityActionIDs(values)
         }
+        if version < 3 {
+            values.insert("windows.launch-app")
+            values.insert("windows.quit-app")
+        }
+        if version < allowedUtilityCatalogVersion { setAllowedUtilityActionIDs(values) }
         return values
     }
 

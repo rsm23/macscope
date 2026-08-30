@@ -175,11 +175,9 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
         let location = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(location) }) else { return }
         let pasteboard = NSPasteboard(name: .drag)
-        // Finder does not consistently expose its private drag pasteboard to a global
-        // event monitor. The drop target still accepts URL values only, so using the
-        // frontmost Finder as a reveal fallback cannot park non-file content.
-        let hasFileURLs = pasteboard.availableType(from: [.fileURL]) != nil
-            || NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+        // Never infer file content from the source application. That previously made
+        // every drag from Finder reveal the shelf, including text and sidebar drags.
+        let hasFileURLs = ShelfDragContent.containsSupportedFiles(in: pasteboard)
         guard ShelfDropZoneGeometry.shouldReveal(
             location: location,
             screenFrame: screen.frame,

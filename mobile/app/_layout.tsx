@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
+import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { RemoteProvider } from "@/remote/remote-provider";
 import { useTheme } from "@/ui/theme";
@@ -13,6 +14,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <RemoteProvider>
+        <StatusBar style="light" />
         <Stack
           screenOptions={{
             headerTransparent: true,

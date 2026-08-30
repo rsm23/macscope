@@ -60,7 +60,7 @@ export default function UtilitiesScreen() {
         ListHeaderComponent={(
           <View style={styles.header}>
             <ScreenHeader eyebrow="Remote control" title="Utilities" detail="Choose what you want the Mac to do. MacScope asks for the required details before anything runs." />
-            <SearchField value={query} onChangeText={setQuery} placeholder={`Search ${remote.utilities.length || 89} actions`} autoCapitalize="none" autoCorrect={false} />
+            <SearchField value={query} onChangeText={setQuery} placeholder={`Search ${remote.utilities.length || 91} actions`} autoCapitalize="none" autoCorrect={false} />
             {!remote.macOnline ? <InlineNotice title="Mac unavailable" message="Actions stay visible, but nothing is queued while MacScope is offline." tone="warning" /> : null}
           </View>
         )}
@@ -97,20 +97,20 @@ const UtilityRow = memo(function UtilityRow({ action }: { action: UtilityAction 
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingBottom: 42 },
-  header: { gap: 17, paddingTop: 12, paddingBottom: 28 },
+  content: { paddingHorizontal: 18, paddingBottom: 48 },
+  header: { gap: 22, paddingTop: 14, paddingBottom: 34 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 11, paddingBottom: 10 },
   moduleMark: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   moduleGlyph: { fontSize: 19, fontWeight: "800" },
   sectionCopy: { flex: 1, gap: 2 },
   sectionTitle: { fontSize: 17, fontWeight: "800", letterSpacing: -0.35 },
   sectionDetail: { fontSize: 11.5 },
-  row: { minHeight: 98, borderRadius: 16, borderCurve: "continuous", borderWidth: StyleSheet.hairlineWidth, padding: 15, flexDirection: "row", alignItems: "center", gap: 10 },
-  rowCopy: { flex: 1, gap: 6 },
+  row: { minHeight: 102, borderRadius: 16, borderCurve: "continuous", borderWidth: StyleSheet.hairlineWidth, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
+  rowCopy: { flex: 1, gap: 8 },
   rowTitle: { fontSize: 16, fontWeight: "700", letterSpacing: -0.25 },
   rowDetail: { fontSize: 12.5, lineHeight: 17 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingTop: 2 },
   chevron: { fontSize: 28, fontWeight: "300" },
-  rowGap: { height: 8 },
-  sectionGap: { height: 26 },
+  rowGap: { height: 10 },
+  sectionGap: { height: 32 },
 });

@@ -8,7 +8,7 @@ const icon = (symbol: string, color: ColorValue) => <Text style={{ color, fontSi
 export default function TabLayout() {
   const theme = useTheme();
   return (
-    <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: theme.background }, tabBarActiveTintColor: theme.accent, tabBarInactiveTintColor: theme.secondary, tabBarLabelStyle: { fontSize: 10.5, fontWeight: "700" }, tabBarStyle: { backgroundColor: theme.card, borderTopColor: theme.border } }}>
+    <Tabs screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: theme.background }, tabBarActiveTintColor: theme.accent, tabBarInactiveTintColor: theme.secondary, tabBarLabelStyle: { fontSize: 10, fontWeight: "800", marginTop: 1 }, tabBarItemStyle: { paddingTop: 5 }, tabBarStyle: { backgroundColor: "#0B1118", borderTopColor: theme.border, height: 64 } }}>
       <Tabs.Screen name="index" options={{ title: "Overview", tabBarIcon: ({ color }) => icon("◉", color) }} />
       <Tabs.Screen name="live" options={{ title: "Live", tabBarIcon: ({ color }) => icon("⌁", color) }} />
       <Tabs.Screen name="utilities" options={{ title: "Tools", tabBarIcon: ({ color }) => icon("◇", color) }} />

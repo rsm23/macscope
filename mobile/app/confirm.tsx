@@ -29,7 +29,7 @@ export default function ConfirmScreen() {
   }, [command]);
 
   if (!command) {
-    return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18 }}><Card><Text selectable style={{ color: palette.red }}>The prepared command is missing or invalid.</Text></Card></ScrollView>;
+    return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22 }}><Card><Text selectable style={{ color: palette.red }}>The prepared command is missing or invalid.</Text></Card></ScrollView>;
   }
 
   const apply = async () => {
@@ -57,7 +57,7 @@ export default function ConfirmScreen() {
 
   const riskColor = command.risk === "destructive" ? palette.red : command.risk === "sensitive" ? palette.amber : palette.cyan;
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, gap: 18, paddingBottom: 36 }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }}>
       <Card style={{ borderColor: `${riskColor}55` }}>
         <Text selectable style={{ color: riskColor, fontSize: 12, fontWeight: "900", letterSpacing: 1 }}>{command.risk.replace("_", " ").toUpperCase()}</Text>
         <Text selectable style={{ color: theme.text, fontSize: 23, fontWeight: "900" }}>{command.title ?? command.actionID}</Text>

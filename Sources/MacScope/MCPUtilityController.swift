@@ -228,6 +228,22 @@ final class MacScopeMCPUtilityController: NSObject {
             model.smoothScrolling.setEnabled(try arguments.bool("enabled"))
         case "windows.activate-app":
             model.workspace.activate(try workspaceApp(pid: arguments.int32("pid")))
+        case "windows.launch-app":
+            guard model.workspace.launch(bundleIdentifier: try arguments.string("bundle_identifier")) else {
+                throw ControllerError.invalidArgument("bundle_identifier", "Choose an application returned by current windows state.")
+            }
+        case "windows.quit-app":
+            let item = try workspaceApp(pid: arguments.int32("pid"))
+            let expectedBundleIdentifier = try arguments.string("expected_bundle_identifier")
+            guard item.bundleIdentifier == expectedBundleIdentifier else {
+                throw ControllerError.invalidArgument("expected_bundle_identifier", "The running application changed before the quit request was applied.")
+            }
+            guard item.bundleIdentifier != "com.apple.finder" else {
+                throw ControllerError.invalidRequest("Finder is a protected system application and cannot be quit remotely.")
+            }
+            guard model.workspace.quit(item) else {
+                throw ControllerError.invalidRequest("The application did not accept the quit request.")
+            }
         case "windows.toggle-hidden-app":
             model.workspace.toggleHidden(try workspaceApp(pid: arguments.int32("pid")))
         case "windows.set-quit-on-close":
@@ -421,11 +437,13 @@ final class MacScopeMCPUtilityController: NSObject {
             ])
         case .windows:
             model.workspace.refresh()
+            model.workspace.refreshInstalledApplications()
             value = .object([
                 "accessibility_trusted": .bool(model.workspace.accessibilityTrusted), "frontmost_application": .string(model.workspace.frontmostApplication),
                 "edge_snap_enabled": .bool(model.workspace.edgeSnapEnabled), "modifier_drag_enabled": .bool(model.workspace.modifierWindowDragEnabled), "green_button_override_enabled": .bool(model.workspace.greenButtonOverrideEnabled),
                 "input_features": .object(["keyboard_debounce": .bool(model.keyboardDebounce.isEnabled), "focus_follows_mouse": .bool(model.focusFollowsMouse.isEnabled), "super_key": .bool(model.superKey.isEnabled), "smooth_scrolling": .bool(model.smoothScrolling.isEnabled), "plain_text_paste": .bool(model.plainTextPaste.isEnabled), "finder_shortcuts": .bool(model.finderShortcuts.isEnabled)])
                 , "applications": .array(model.workspace.applications.map { .object(["pid": .integer(Int64($0.id)), "name": .string($0.name), "bundle_identifier": $0.bundleIdentifier.json, "active": .bool($0.isActive), "hidden": .bool($0.isHidden), "quit_on_close": .bool(model.workspace.quitsOnClose($0))]) })
+                , "installed_applications": .array(model.workspace.installedApplications.map { .object(["bundle_identifier": .string($0.bundleIdentifier), "name": .string($0.name)]) })
             ])
         case .clipboard:
             let clipboardImages = Dictionary(uniqueKeysWithValues: (model.clipboard.pinnedEntries + model.clipboard.entries).compactMap { entry -> (String, Data)? in

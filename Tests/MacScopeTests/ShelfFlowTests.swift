@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import MacScope
@@ -23,6 +24,35 @@ struct ShelfFlowTests {
             screenFrame: frame,
             hasFileURLs: false
         ))
+    }
+
+    @Test("Drag detection accepts file URLs and rejects unrelated pasteboard content")
+    func dragPasteboardRequiresFiles() throws {
+        let fixture = try ShelfFixture()
+        defer { fixture.remove() }
+        let file = fixture.source.appendingPathComponent("report.txt")
+        try Data("MacScope".utf8).write(to: file)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("MacScope-Shelf-\(UUID().uuidString)"))
+
+        pasteboard.clearContents()
+        pasteboard.setString("dragged text", forType: .string)
+        #expect(!ShelfDragContent.containsSupportedFiles(in: pasteboard))
+
+        pasteboard.clearContents()
+        pasteboard.writeObjects([file as NSURL])
+        #expect(ShelfDragContent.containsSupportedFiles(in: pasteboard))
+    }
+
+    @Test("Shelf file rows export a standard file URL drag provider")
+    func dragProviderExportsFileURL() throws {
+        let fixture = try ShelfFixture()
+        defer { fixture.remove() }
+        let file = fixture.source.appendingPathComponent("report.txt")
+        try Data("MacScope".utf8).write(to: file)
+
+        let provider = ShelfDragContent.itemProvider(for: file)
+
+        #expect(provider.hasItemConformingToTypeIdentifier("public.file-url"))
     }
 
     @Test("Clicking the shelf moves parked files to the destination") @MainActor
@@ -53,7 +83,8 @@ struct ShelfFlowTests {
             return source
         }
         let service = SnippetShelfService(
-            finderDestinationProvider: { fixture.destination }
+            finderDestinationProvider: { fixture.destination },
+            finderFocusProvider: { true }
         )
         service.addShelfItems(sources)
 
@@ -67,6 +98,46 @@ struct ShelfFlowTests {
             ))
         }
         #expect(service.statusMessage == "Moved 3.")
+    }
+
+    @Test("Move is disabled unless Finder is focused on a different folder") @MainActor
+    func moveRequiresDifferentFocusedFinderFolder() throws {
+        let fixture = try ShelfFixture()
+        defer { fixture.remove() }
+        let source = fixture.source.appendingPathComponent("report.txt")
+        try Data("MacScope".utf8).write(to: source)
+        let finder = FinderFixtureState(destination: fixture.destination)
+        let service = SnippetShelfService(
+            finderDestinationProvider: { finder.destination },
+            finderFocusProvider: { finder.focused }
+        )
+        service.addShelfItems([source])
+
+        #expect(service.captureFrontmostFinderDestination() == nil)
+        #expect(!service.canMoveToCurrentFinderFolder)
+
+        finder.focused = true
+        finder.destination = fixture.source
+        #expect(service.captureFrontmostFinderDestination() == fixture.source)
+        #expect(!service.canMoveToCurrentFinderFolder)
+
+        finder.destination = fixture.destination
+        #expect(service.captureFrontmostFinderDestination() == fixture.destination)
+        #expect(service.canMoveToCurrentFinderFolder)
+    }
+
+    @Test("Shelf accepts existing files and folders only") @MainActor
+    func acceptsOnlySupportedFileURLs() throws {
+        let fixture = try ShelfFixture()
+        defer { fixture.remove() }
+        let file = fixture.source.appendingPathComponent("report.txt")
+        try Data("MacScope".utf8).write(to: file)
+        let missing = fixture.source.appendingPathComponent("missing.txt")
+        let service = SnippetShelfService()
+
+        service.addShelfItems([file, fixture.source, missing, URL(string: "https://example.com")!])
+
+        #expect(service.shelfItems.map(\.url) == [file.standardizedFileURL, fixture.source.standardizedFileURL])
     }
 
     @Test("A name collision is never overwritten and stays parked") @MainActor
@@ -103,6 +174,16 @@ struct ShelfFlowTests {
         #expect(FileManager.default.fileExists(atPath: folder.path))
         #expect(service.shelfItems.count == 1)
         #expect(service.statusMessage?.contains("failed and kept on shelf") == true)
+    }
+}
+
+@MainActor
+private final class FinderFixtureState {
+    var focused = false
+    var destination: URL
+
+    init(destination: URL) {
+        self.destination = destination
     }
 }
 

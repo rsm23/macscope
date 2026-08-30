@@ -57,9 +57,9 @@ jobs:
       matrix:
         include:
           - platform: android
-            profile: preview
+            profile: production
           - platform: ios
-            profile: simulator
+            profile: production
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
@@ -75,5 +75,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Require Expo token
         run: test -n "$EXPO_TOKEN"
-      - name: Start EAS build
+      - name: Start store EAS build
         run: pnpm dlx eas-cli@latest build --platform "${{ matrix.platform }}" --profile "${{ matrix.profile }}" --non-interactive --no-wait

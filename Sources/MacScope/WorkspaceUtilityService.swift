@@ -12,6 +12,14 @@ struct WorkspaceApplication: Identifiable {
     let isHidden: Bool
 }
 
+struct InstalledWorkspaceApplication: Identifiable {
+    let bundleIdentifier: String
+    let name: String
+    let url: URL
+
+    var id: String { bundleIdentifier }
+}
+
 private final class EdgeSnapEngine: @unchecked Sendable {
     private weak var owner: WorkspaceUtilityService?
     private var tap: CFMachPort?
@@ -312,6 +320,7 @@ private func edgeSnapEventCallback(
 @Observable
 final class WorkspaceUtilityService {
     private(set) var applications: [WorkspaceApplication] = []
+    private(set) var installedApplications: [InstalledWorkspaceApplication] = []
     private(set) var frontmostApplication = "No active app"
     private(set) var statusMessage: String?
     private(set) var accessibilityTrusted = AXIsProcessTrusted()
@@ -336,6 +345,7 @@ final class WorkspaceUtilityService {
     private var modifierWindowDragEngine: ModifierWindowDragEngine?
     private var modifierWindowDragSession: ModifierWindowDragSession?
     private var greenButtonOverrideEngine: GreenButtonOverrideEngine?
+    private var installedApplicationsRefreshedAt: Date?
 
     private struct ModifierWindowDragSession {
         let window: AXUIElement
@@ -359,6 +369,7 @@ final class WorkspaceUtilityService {
         if UserDefaults.standard.bool(forKey: greenButtonOverrideKey) {
             setGreenButtonOverrideEnabled(true, requestPermission: false)
         }
+        refreshInstalledApplications(force: true)
     }
 
     func refresh() {
@@ -383,6 +394,48 @@ final class WorkspaceUtilityService {
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
         frontmostApplication = NSWorkspace.shared.frontmostApplication?.localizedName ?? "No active app"
+    }
+
+    func refreshInstalledApplications(force: Bool = false) {
+        if !force,
+           let installedApplicationsRefreshedAt,
+           Date().timeIntervalSince(installedApplicationsRefreshedAt) < 60 {
+            return
+        }
+        let manager = FileManager.default
+        let roots = [
+            URL(fileURLWithPath: "/Applications", isDirectory: true),
+            manager.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Applications", isDirectory: true),
+            URL(fileURLWithPath: "/System/Applications/Utilities", isDirectory: true),
+            URL(fileURLWithPath: "/Applications/Utilities", isDirectory: true),
+        ]
+        let currentBundleIdentifier = Bundle.main.bundleIdentifier
+        var discovered: [String: InstalledWorkspaceApplication] = [:]
+        for root in roots {
+            guard let children = try? manager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isApplicationKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for url in children where url.pathExtension.lowercased() == "app" {
+                guard let bundle = Bundle(url: url),
+                      let bundleIdentifier = bundle.bundleIdentifier,
+                      bundleIdentifier != currentBundleIdentifier else { continue }
+                let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                    ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+                    ?? url.deletingPathExtension().lastPathComponent
+                discovered[bundleIdentifier] = InstalledWorkspaceApplication(
+                    bundleIdentifier: bundleIdentifier,
+                    name: name,
+                    url: url
+                )
+            }
+        }
+        installedApplications = discovered.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+        installedApplicationsRefreshedAt = Date()
     }
 
     func requestAccessibilityPermission() {
@@ -808,6 +861,42 @@ final class WorkspaceUtilityService {
         guard let app = application(pid: item.id) else { return }
         app.activate(options: [.activateAllWindows])
         refresh()
+    }
+
+    func launch(bundleIdentifier: String) -> Bool {
+        refreshInstalledApplications(force: true)
+        guard let item = installedApplications.first(where: { $0.bundleIdentifier == bundleIdentifier }) else {
+            statusMessage = "The requested application is no longer installed."
+            return false
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: item.url, configuration: configuration) { [weak self] _, error in
+            Task { @MainActor in
+                if let error {
+                    self?.statusMessage = "Could not open \(item.name): \(error.localizedDescription)"
+                } else {
+                    self?.statusMessage = "Opened \(item.name)."
+                    self?.refresh()
+                }
+            }
+        }
+        statusMessage = "Opening \(item.name)…"
+        return true
+    }
+
+    func quit(_ item: WorkspaceApplication) -> Bool {
+        guard let app = application(pid: item.id), !app.isTerminated else {
+            statusMessage = "\(item.name) is no longer running."
+            return false
+        }
+        guard app.terminate() else {
+            statusMessage = "\(item.name) did not accept the quit request."
+            return false
+        }
+        statusMessage = "Asked \(item.name) to quit."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refresh() }
+        return true
     }
 
     func toggleHidden(_ item: WorkspaceApplication) {

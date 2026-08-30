@@ -67,13 +67,13 @@ EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli project:info
 The app is linked to the `@rsm23/macscope-remote` EAS project. For local UI work, use `pnpm start`. Camera scanning, native notifications, and device authentication must also be checked in a development or internal build on physical devices:
 
 ```bash
-EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile preview --platform android
-EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile simulator --platform ios
+EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile production --platform android
+EXPO_NO_DOTENV=1 EXPO_NO_CLIENT_ENV_VARS=1 pnpm dlx eas-cli build --profile production --platform ios
 ```
 
-The preview profile produces an internally distributable Android APK, and the simulator profile produces an installable iOS Simulator archive. A production iOS build can use the paid Apple Developer membership and requires App Store Connect distribution credentials.
+The production profile produces an Android App Bundle for Google Play and an iOS archive for App Store Connect. The first iOS production build must validate or create App Store distribution credentials interactively; subsequent GitHub Actions builds can use the validated remote EAS credentials non-interactively.
 
-`.github/workflows/mobile.yml` runs the mobile test, typecheck, lint, and Expo Doctor checks for mobile changes. Its manual dispatch starts both EAS builds when an `EXPO_TOKEN` repository secret is present. Both local commands and CI explicitly disable Expo `.env` loading.
+`.github/workflows/mobile.yml` runs the mobile test, typecheck, lint, and Expo Doctor checks for mobile changes. Its manual dispatch starts both production store builds when an `EXPO_TOKEN` repository secret is present. Both local commands and CI explicitly disable Expo `.env` loading.
 
 ## Security properties
 

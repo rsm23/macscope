@@ -31,7 +31,7 @@ export default function PairScreen() {
   };
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 18, gap: 18, paddingBottom: 36 }}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 18, paddingTop: 20, gap: 22, paddingBottom: 48 }}>
       <Card>
         <Text selectable style={{ color: theme.text, fontSize: 20, fontWeight: "900" }}>Scan the one-time QR</Text>
         <Text selectable style={{ color: theme.secondary, fontSize: 14, lineHeight: 20 }}>Open MacScope on the Mac, then go to Settings → Remote. Pairing links work once and expire after ten minutes.</Text>

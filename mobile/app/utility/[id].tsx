@@ -181,7 +181,7 @@ function rangeLabel(field: ArgumentField): string {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 42, gap: 17 }, tags: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  safe: { flex: 1 }, content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 48, gap: 22 }, tags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   booleanRow: { flexDirection: "row", alignItems: "center", gap: 14 }, fieldCopy: { flex: 1, gap: 4 }, heading: { gap: 4 }, step: { fontSize: 10, fontWeight: "900", letterSpacing: 1.1 }, question: { fontSize: 17, lineHeight: 22, fontWeight: "700", letterSpacing: -0.3 }, description: { fontSize: 12, lineHeight: 17 },
   booleanChoices: { flexDirection: "row", gap: 8 }, booleanChoice: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 12 }, booleanChoiceText: { fontSize: 13, fontWeight: "800" },
   nullableChoices: { flexDirection: "row", gap: 8, flexWrap: "wrap" },

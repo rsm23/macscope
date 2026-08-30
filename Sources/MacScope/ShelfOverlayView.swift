@@ -19,6 +19,23 @@ enum ShelfDropZoneGeometry {
     }
 }
 
+enum ShelfDragContent {
+    static func containsSupportedFiles(in pasteboard: NSPasteboard) -> Bool {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true
+        ]
+        guard let values = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: options
+        ) as? [URL] else { return false }
+        return values.contains(where: SnippetShelfService.isSupportedShelfURL)
+    }
+
+    static func itemProvider(for url: URL) -> NSItemProvider {
+        NSItemProvider(contentsOf: url) ?? NSItemProvider(object: url as NSURL)
+    }
+}
+
 struct ShelfOverlayView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     let service: SnippetShelfService
@@ -39,7 +56,8 @@ struct ShelfOverlayView: View {
                         service.moveShelfItemsToCurrentFinderFolder()
                     }
                     .macScopeGlassButton(prominent: true)
-                    .help("Move shelf files to \(service.destinationDisplayName); choose a folder if Finder cannot be read")
+                    .disabled(!service.canMoveToCurrentFinderFolder)
+                    .help(service.moveDestinationHelp)
                 }
                 Button { dismissWindow(id: "session-shelf") } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
@@ -80,6 +98,9 @@ struct ShelfOverlayView: View {
                                         .lineLimit(1).font(.caption2).foregroundStyle(.secondary)
                                 }
                                 Spacer()
+                                Image(systemName: "hand.draw")
+                                    .foregroundStyle(.secondary)
+                                    .help("Drag this file into Finder or another app")
                                 Button("Open") { service.open(item) }.buttonStyle(.link)
                                 Button("Reveal") { service.reveal(item) }.buttonStyle(.link)
                                 Button(role: .destructive) { service.remove(item) } label: { Image(systemName: "xmark") }
@@ -87,7 +108,10 @@ struct ShelfOverlayView: View {
                             }
                             .padding(10)
                             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
-                            .draggable(item.url)
+                            .contentShape(Rectangle())
+                            .onDrag {
+                                ShelfDragContent.itemProvider(for: item.url)
+                            }
                         }
                     }
                 }
@@ -168,7 +192,8 @@ struct ShelfDropZoneView: View {
                     moveParkedItems()
                 }
                 .macScopeGlassButton(prominent: true)
-                .help("Move to the current Finder folder; choose a destination if Finder cannot be read")
+                .disabled(!service.canMoveToCurrentFinderFolder)
+                .help(service.moveDestinationHelp)
                 Button {
                     openWindow(id: "session-shelf")
                     NSApp.activate(ignoringOtherApps: true)

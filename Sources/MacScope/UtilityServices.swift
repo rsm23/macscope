@@ -879,13 +879,17 @@ final class SnippetShelfService {
     private(set) var isInstallingDiskImage = false
     private let snippetsKey = "utility.savedSnippets"
     private let finderDestinationProvider: @MainActor () -> URL?
+    private let finderFocusProvider: @MainActor () -> Bool
     private var expansionEngine: TextExpansionEngine?
 
     init(
         finderDestinationProvider: @escaping @MainActor () -> URL?
-            = SnippetShelfService.currentFinderDestination
+            = SnippetShelfService.currentFinderDestination,
+        finderFocusProvider: @escaping @MainActor () -> Bool
+            = SnippetShelfService.isFinderFrontmost
     ) {
         self.finderDestinationProvider = finderDestinationProvider
+        self.finderFocusProvider = finderFocusProvider
         load()
         if UserDefaults.standard.bool(forKey: "utility.textExpansionEnabled") {
             setExpansionEnabled(true, requestPermission: false)
@@ -977,7 +981,7 @@ final class SnippetShelfService {
     }
 
     func addShelfItems(_ urls: [URL]) {
-        let resolved = urls.map(\.standardizedFileURL).filter { $0.isFileURL }
+        let resolved = urls.map(\.standardizedFileURL).filter(Self.isSupportedShelfURL)
         let existing = Set(shelfItems.map(\.url))
         let additions = resolved.filter { !existing.contains($0) }
         shelfItems.append(contentsOf: additions.map(ShelfItem.init))
@@ -988,15 +992,42 @@ final class SnippetShelfService {
         destinationFolder?.lastPathComponent ?? "Finder destination"
     }
 
+    var canMoveToCurrentFinderFolder: Bool {
+        guard finderFocusProvider(), let destinationFolder else { return false }
+        return isValidMoveDestination(destinationFolder)
+    }
+
+    var moveDestinationHelp: String {
+        guard finderFocusProvider() else { return "Focus the destination Finder window to enable Move." }
+        guard let destinationFolder else { return "MacScope cannot read the focused Finder folder." }
+        guard isValidMoveDestination(destinationFolder) else {
+            return "Choose a Finder folder different from every parked item's source."
+        }
+        return "Move every parked file or folder to \(destinationFolder.lastPathComponent)."
+    }
+
     @discardableResult
     func captureFrontmostFinderDestination() -> URL? {
-        guard let url = finderDestinationProvider() else { return nil }
+        guard finderFocusProvider(), let url = finderDestinationProvider() else {
+            destinationFolder = nil
+            return nil
+        }
         destinationFolder = url.standardizedFileURL
         return destinationFolder
     }
 
+    nonisolated static func isSupportedShelfURL(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+        return values?.isRegularFile == true || values?.isDirectory == true
+    }
+
+    private static func isFinderFrontmost() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+    }
+
     private static func currentFinderDestination() -> URL? {
-        guard AXIsProcessTrusted(),
+        guard isFinderFrontmost(), AXIsProcessTrusted(),
               let finder = NSRunningApplication.runningApplications(
                   withBundleIdentifier: "com.apple.finder"
               ).first else { return nil }
@@ -1053,11 +1084,23 @@ final class SnippetShelfService {
             statusMessage = "The shelf has no files or folders to move."
             return
         }
-        guard let destination = captureFrontmostFinderDestination() else {
-            chooseShelfDestinationAndMove()
+        guard let destination = captureFrontmostFinderDestination(),
+              isValidMoveDestination(destination) else {
+            statusMessage = "Focus a Finder window in a folder different from the parked items' source, then try again."
             return
         }
         moveShelfItems(to: destination)
+    }
+
+    func isValidMoveDestination(_ destination: URL) -> Bool {
+        let resolvedDestination = destination.standardizedFileURL.resolvingSymlinksInPath()
+        return !shelfItems.isEmpty && shelfItems.allSatisfy { item in
+            let source = item.url.standardizedFileURL.resolvingSymlinksInPath()
+            guard source.deletingLastPathComponent() != resolvedDestination,
+                  source != resolvedDestination else { return false }
+            let isDirectory = (try? source.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            return !isDirectory || !resolvedDestination.path.hasPrefix(source.path + "/")
+        }
     }
 
     func chooseShelfDestinationAndMove() {

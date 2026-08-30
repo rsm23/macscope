@@ -3,7 +3,7 @@
     "name": "MacScope Remote",
     "slug": "macscope-remote",
     "owner": "rsm23",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Securely monitor and control a paired Mac running MacScope.",
     "icon": "../Resources/AppIcon.png",
     "orientation": "portrait",

@@ -55,10 +55,12 @@ final class AppModel {
     private var appliedStartupRevision: UInt64?
     private var lastMenuBarPresentationAt: Date?
     private var didStartAutomatically = false
+    @ObservationIgnored private var automaticStartObserver: NSObjectProtocol?
 
     init(
         engine: TelemetryEngine = TelemetryEngine(),
-        alertNotifications: UsageAlertNotificationController = UsageAlertNotificationController()
+        alertNotifications: UsageAlertNotificationController = UsageAlertNotificationController(),
+        automaticallyStarts: Bool = false
     ) {
         self.engine = engine
         self.alertNotifications = alertNotifications
@@ -66,6 +68,27 @@ final class AppModel {
         // MCP utility requests must work for a menu-bar-only launch even when the
         // main window is restored closed and its SwiftUI task never appears.
         mcpUtilityController.start()
+        if automaticallyStarts {
+            // A restored menu-bar-only launch may never create the main window,
+            // so its `.task` cannot be the sole owner of telemetry and remote
+            // startup. Wait until AppKit has finished launching before touching
+            // Keychain; an access prompt cannot be presented while SwiftUI is
+            // still constructing the App value.
+            automaticStartObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didFinishLaunchingNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.startAutomaticallyIfNeeded()
+                    if let observer = self.automaticStartObserver {
+                        NotificationCenter.default.removeObserver(observer)
+                        self.automaticStartObserver = nil
+                    }
+                }
+            }
+        }
     }
 
     func start() {

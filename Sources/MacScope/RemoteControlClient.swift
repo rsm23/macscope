@@ -147,7 +147,6 @@ final class MacScopeRemoteControlClient {
                 allowUtilityWrites: true
             )
         )
-        environmentID = try? RemoteKeychain.string(account: "environment-id")
     }
 
     func startIfEnabled() {
@@ -159,11 +158,7 @@ final class MacScopeRemoteControlClient {
             status = .needsConfiguration
             return
         }
-        if environmentID == nil || (try? RemoteKeychain.string(account: "environment-secret")) == nil {
-            Task { await enroll() }
-        } else {
-            Task { await connect() }
-        }
+        Task { await connectUsingStoredCredentials() }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -370,11 +365,34 @@ final class MacScopeRemoteControlClient {
         Task { await sendEncoded(kind: .alert, value: MacScopeRemoteAlertEventV1(event: alert)) }
     }
 
+    private func connectUsingStoredCredentials() async {
+        // Read sequentially so macOS never stacks two Keychain authorization
+        // sheets when a newly signed build first reconnects.
+        let environmentID = await keychainString(account: "environment-id")
+        let secret = await keychainString(account: "environment-secret")
+        self.environmentID = environmentID
+        guard let environmentID, let secret else {
+            await enroll()
+            return
+        }
+        await connect(environmentID: environmentID, secret: secret)
+    }
+
+    private func keychainString(account: String) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            try? RemoteKeychain.string(account: account)
+        }.value
+    }
+
     private func connect() async {
+        guard let environmentID,
+              let secret = await keychainString(account: "environment-secret") else { return }
+        await connect(environmentID: environmentID, secret: secret)
+    }
+
+    private func connect(environmentID: String, secret: String) async {
         guard socket == nil,
-              let relayBaseURL,
-              let environmentID,
-              let secret = try? RemoteKeychain.string(account: "environment-secret") else { return }
+              let relayBaseURL else { return }
         status = reconnectAttempt == 0 ? .connecting : .reconnecting
         do {
             let ticket: WebSocketTicketResponse = try await request(

@@ -236,7 +236,7 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MacScopeApp: App {
     @NSApplicationDelegateAdaptor(MacScopeApplicationDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model = AppModel(automaticallyStarts: true)
     @AppStorage("appAppearance") private var appAppearance = MacScopeAppearance.system.rawValue
 
     private var preferredColorScheme: ColorScheme? {

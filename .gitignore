@@ -12,3 +12,4 @@ xcuserdata/
 __pycache__/
 *.py[cod]
 .env
+.codex/private/

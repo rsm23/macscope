@@ -76,6 +76,44 @@ private struct MenuBarGraphStatusArtwork: View {
     let metrics: [MenuBarReadoutMetric]
     let presentation: MenuBarPresentation
 
+    private struct Layout {
+        let metricCount: Int
+
+        var isCompact: Bool { metricCount > 1 }
+        var isDense: Bool { metricCount > 2 }
+        var fontSize: CGFloat { isDense ? 8.5 : (isCompact ? 9.5 : 10) }
+        var barWidth: CGFloat { isDense ? 2.2 : (isCompact ? 2.4 : 3.5) }
+        var barSpacing: CGFloat { isCompact ? 0.8 : 1.5 }
+        var segmentCount: Int { isDense ? 3 : (isCompact ? 5 : MenuBarUsageGauge.segmentCount) }
+        var graphSpacing: CGFloat { isDense ? 2 : (isCompact ? 3 : 5) }
+        var entrySpacing: CGFloat { isDense ? 3 : (isCompact ? 4 : 7) }
+        var networkWidth: CGFloat { isDense ? 18 : (isCompact ? 30 : MenuBarNetworkGraph.width) }
+        var leadingWidth: CGFloat { isCompact ? 0 : 21 }
+
+        func usageText(metric: MenuBarReadoutMetric, fraction: Double) -> String {
+            guard isCompact else {
+                return MenuBarUsageGauge.displayText(label: metric.shortName, fraction: fraction)
+            }
+            let percent = Int((min(max(fraction, 0), 1) * 100).rounded())
+            return isDense ? "\(metric.compactName)\(percent)" : "\(metric.compactName) \(percent)%"
+        }
+
+        func statusText(metric: MenuBarReadoutMetric, presentation: MenuBarPresentation) -> String {
+            guard isCompact else { return metric.value(presentation) }
+            switch metric {
+            case .network:
+                return metric.compactName
+            case .batteryTime:
+                return presentation.batteryTimeRemaining == nil ? "T—" : "T"
+            case .fan:
+                guard let rpm = presentation.fanRPM else { return "F—" }
+                return isDense ? "F" : "F \(Int(rpm.rounded()))"
+            case .cpu, .memory, .battery:
+                return metric.compactName
+            }
+        }
+    }
+
     var body: some View {
         Image(nsImage: artwork)
             .interpolation(.high)
@@ -84,55 +122,57 @@ private struct MenuBarGraphStatusArtwork: View {
     }
 
     @MainActor private var artwork: NSImage {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        let layout = Layout(metricCount: metrics.count)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: layout.fontSize, weight: .semibold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.labelColor,
         ]
-        let barWidth: CGFloat = 3.5
-        let barSpacing: CGFloat = 1.5
-        let barGroupWidth = (barWidth * CGFloat(MenuBarUsageGauge.segmentCount))
-            + (barSpacing * CGFloat(MenuBarUsageGauge.segmentCount - 1))
+        let barGroupWidth = (layout.barWidth * CGFloat(layout.segmentCount))
+            + (layout.barSpacing * CGFloat(layout.segmentCount - 1))
         let entries = metrics.map { metric -> (metric: MenuBarReadoutMetric, text: String, fraction: Double?) in
             guard metric.fraction(presentation) != nil else {
-                return (metric, metric.value(presentation), nil)
+                return (metric, layout.statusText(metric: metric, presentation: presentation), nil)
             }
             let fraction = currentFraction(for: metric)
-            return (metric, MenuBarUsageGauge.displayText(label: metric.shortName, fraction: fraction), fraction)
+            return (metric, layout.usageText(metric: metric, fraction: fraction), fraction)
         }
         let textSizes = entries.map { $0.text.size(withAttributes: attributes) }
         let entriesWidth = zip(entries, textSizes).reduce(CGFloat.zero) { total, pair in
             let graphWidth: CGFloat
             if pair.0.metric == .network {
-                graphWidth = 5 + MenuBarNetworkGraph.width
+                graphWidth = layout.graphSpacing + layout.networkWidth
             } else if pair.0.fraction != nil {
-                graphWidth = 5 + barGroupWidth
+                graphWidth = layout.graphSpacing + barGroupWidth
             } else {
                 graphWidth = 0
             }
             return total + ceil(pair.1.width) + graphWidth
         }
-        let interEntrySpacing = CGFloat(max(entries.count - 1, 0)) * 7
+        let interEntrySpacing = CGFloat(max(entries.count - 1, 0)) * layout.entrySpacing
         let imageSize = NSSize(
-            width: 16 + 5 + entriesWidth + interEntrySpacing,
+            width: layout.leadingWidth + entriesWidth + interEntrySpacing,
             height: 16
         )
 
         let image = NSImage(size: imageSize, flipped: false) { _ in
-            let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor]))
-            let waveform = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: nil)?
-                .withSymbolConfiguration(symbolConfiguration)
-            waveform?.draw(in: NSRect(x: 0, y: 1, width: 16, height: 14))
+            if layout.leadingWidth > 0 {
+                let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor.labelColor]))
+                let waveform = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: nil)?
+                    .withSymbolConfiguration(symbolConfiguration)
+                waveform?.draw(in: NSRect(x: 0, y: 1, width: 16, height: 14))
+            }
 
             let gradient = NSGradient(colors: [
                 NSColor(deviceRed: 0.18, green: 0.78, blue: 0.92, alpha: 1),
                 NSColor(deviceRed: 0.12, green: 0.58, blue: 0.95, alpha: 1),
                 NSColor(deviceRed: 0.95, green: 0.38, blue: 0.93, alpha: 1),
             ])
-            var x: CGFloat = 21
+            var x = layout.leadingWidth
 
-            for (entry, textSize) in zip(entries, textSizes) {
+            for (index, pair) in zip(entries, textSizes).enumerated() {
+                let (entry, textSize) = pair
                 entry.text.draw(
                     at: NSPoint(x: x, y: (imageSize.height - textSize.height) / 2),
                     withAttributes: attributes
@@ -140,30 +180,30 @@ private struct MenuBarGraphStatusArtwork: View {
                 x += ceil(textSize.width)
 
                 if entry.metric == .network {
-                    x += 5
+                    x += layout.graphSpacing
                     drawNetworkGraph(
-                        in: NSRect(x: x, y: 1, width: MenuBarNetworkGraph.width, height: 14)
+                        in: NSRect(x: x, y: 1, width: layout.networkWidth, height: 14)
                     )
-                    x += MenuBarNetworkGraph.width
+                    x += layout.networkWidth
                 } else if let fraction = entry.fraction {
-                    x += 5
-                    let level = min(max(fraction, 0), 1) * Double(MenuBarUsageGauge.segmentCount)
-                    for index in 0..<MenuBarUsageGauge.segmentCount {
+                    x += layout.graphSpacing
+                    let level = min(max(fraction, 0), 1) * Double(layout.segmentCount)
+                    for segmentIndex in 0..<layout.segmentCount {
                         let rect = NSRect(
-                            x: x + (CGFloat(index) * (barWidth + barSpacing)),
+                            x: x + (CGFloat(segmentIndex) * (layout.barWidth + layout.barSpacing)),
                             y: 1,
-                            width: barWidth,
+                            width: layout.barWidth,
                             height: 14
                         )
                         let path = NSBezierPath(
                             roundedRect: rect,
-                            xRadius: barWidth / 2,
-                            yRadius: barWidth / 2
+                            xRadius: layout.barWidth / 2,
+                            yRadius: layout.barWidth / 2
                         )
                         NSColor.labelColor.withAlphaComponent(0.16).setFill()
                         path.fill()
 
-                        let activation = min(max(level - Double(index), 0), 1)
+                        let activation = min(max(level - Double(segmentIndex), 0), 1)
                         guard activation > 0, let gradient else { continue }
                         NSGraphicsContext.saveGraphicsState()
                         path.addClip()
@@ -173,7 +213,7 @@ private struct MenuBarGraphStatusArtwork: View {
                     }
                     x += barGroupWidth
                 }
-                x += 7
+                if index < entries.count - 1 { x += layout.entrySpacing }
             }
             return true
         }
@@ -295,6 +335,16 @@ enum MenuBarReadoutMetric: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var shortName: String {
         switch self { case .memory: "MEM"; case .network: "NET"; case .battery: "BAT"; case .batteryTime: "TIME"; default: rawValue.uppercased() }
+    }
+    var compactName: String {
+        switch self {
+        case .cpu: "C"
+        case .memory: "M"
+        case .network: "N"
+        case .battery: "B"
+        case .batteryTime: "T"
+        case .fan: "F"
+        }
     }
 
     static func selected(from stored: String) -> [MenuBarReadoutMetric] {

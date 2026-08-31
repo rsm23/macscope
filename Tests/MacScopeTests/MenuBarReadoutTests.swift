@@ -1,9 +1,10 @@
 import AppKit
+import MacScopeCore
 import SwiftUI
 import Testing
 @testable import MacScope
 
-@Suite("Menu bar readout")
+@Suite("Menu bar readout", .serialized)
 struct MenuBarReadoutTests {
     @Test("Usage bars fit inside the macOS menu bar") @MainActor
     func usageBarsHaveCompactHeight() {
@@ -23,6 +24,37 @@ struct MenuBarReadoutTests {
 
         #expect(hostingView.fittingSize.height <= 22)
         #expect(hostingView.fittingSize.width > 24)
+    }
+
+    @Test("CPU and memory usage bars remain visible together") @MainActor
+    func combinedCPUAndMemoryBarsFit() {
+        let defaults = UserDefaults.standard
+        let previousStyle = defaults.object(forKey: "menuBarReadoutStyle")
+        let previousMetrics = defaults.object(forKey: "menuBarReadoutMetrics")
+        defer {
+            restore(previousStyle, forKey: "menuBarReadoutStyle", in: defaults)
+            restore(previousMetrics, forKey: "menuBarReadoutMetrics", in: defaults)
+        }
+        defaults.set(MenuBarReadoutStyle.bars.rawValue, forKey: "menuBarReadoutStyle")
+        defaults.set(
+            [MenuBarReadoutMetric.cpu, .memory].map(\.rawValue).joined(separator: "|"),
+            forKey: "menuBarReadoutMetrics"
+        )
+
+        var memory = MemorySnapshot()
+        memory.total = 100
+        memory.used = 73
+        let presentation = MenuBarPresentation(
+            snapshot: SystemSnapshot(cpuUsage: 43, memory: memory)
+        )
+
+        let hostingView = NSHostingView(
+            rootView: MenuBarStatusLabel(presentation: presentation)
+        )
+
+        #expect(MenuBarReadoutMetric.selected(from: "CPU|Memory") == [.cpu, .memory])
+        #expect(hostingView.fittingSize.height <= 22)
+        #expect(hostingView.fittingSize.width <= 128)
     }
 
     @Test("Usage bars map utilization onto seven visual segments") @MainActor

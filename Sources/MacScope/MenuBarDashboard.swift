@@ -3,6 +3,14 @@ import Charts
 import MacScopeCore
 import SwiftUI
 
+struct LiveMenuBarStatusLabel: View {
+    let model: AppModel
+
+    var body: some View {
+        MenuBarStatusLabel(presentation: model.menuBarPresentation)
+    }
+}
+
 struct MenuBarStatusLabel: View {
     let presentation: MenuBarPresentation
     @AppStorage("menuBarReadoutMetrics") private var storedMetrics = MenuBarReadoutMetric.cpu.rawValue

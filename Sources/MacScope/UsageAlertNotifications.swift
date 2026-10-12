@@ -89,17 +89,18 @@ enum UsageAlertPreferences {
 
 @MainActor
 final class UsageAlertNotificationController {
-    private let center: UNUserNotificationCenter
+    private let center: UNUserNotificationCenter?
     private let delegate: UsageAlertNotificationDelegate
 
-    init(center: UNUserNotificationCenter = .current()) {
+    init(center: UNUserNotificationCenter? = .current()) {
         self.center = center
         let delegate = UsageAlertNotificationDelegate()
         self.delegate = delegate
-        center.delegate = delegate
+        center?.delegate = delegate
     }
 
     func deliver(_ event: UsageAlertEvent) {
+        guard let center else { return }
         center.getNotificationSettings { [center] settings in
             guard settings.authorizationStatus == .authorized
                     || settings.authorizationStatus == .provisional else { return }

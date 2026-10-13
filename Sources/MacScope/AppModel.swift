@@ -140,6 +140,7 @@ final class AppModel {
         guard !didStartAutomatically else { return }
         didStartAutomatically = true
         if UtilityFeatureStore.isEnabled(.capture) { screenshots.refresh() }
+        audioMixer.restoreMixingPreferences()
         start()
         remoteControl.startIfEnabled()
     }

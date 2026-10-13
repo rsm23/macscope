@@ -27,7 +27,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacScope",
-            dependencies: ["MacScopeCore", "MacScopeMCPBridge"],
+            dependencies: ["MacScopeCore", "MacScopeMCPBridge", "MacScopeAudioSupport"],
             resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("SwiftUI"),
@@ -66,6 +66,7 @@ let package = Package(
             ],
             linkerSettings: [.linkedFramework("AppKit")]
         ),
+        .target(name: "MacScopeAudioSupport"),
         .testTarget(name: "MacScopeCoreTests", dependencies: ["MacScopeCore"]),
         .testTarget(
             name: "MacScopeTests",

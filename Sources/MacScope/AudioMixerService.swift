@@ -1,8 +1,10 @@
 import AppKit
 import AudioToolbox
 import CoreAudio
+import Darwin
 import Foundation
 import MacScopeCore
+import MacScopeAudioSupport
 import Observation
 
 struct AudioMixerApp: Identifiable, Equatable {
@@ -28,6 +30,28 @@ struct AudioInputDevice: Identifiable, Equatable {
     let uid: String
     let name: String
     let isDefault: Bool
+}
+
+struct AudioMixerInventory {
+    var apps: [AudioMixerApp]
+    var outputs: [AudioOutputDevice]
+}
+
+enum AudioMixerProcessOwner {
+    static func resolve(
+        pid: pid_t, regularAppPIDs: Set<pid_t>, ownPID: pid_t,
+        parentPID: (pid_t) -> pid_t?
+    ) -> pid_t? {
+        var candidate = pid
+        var visited: Set<pid_t> = []
+        for _ in 0..<64 {
+            guard candidate > 1, candidate != ownPID, visited.insert(candidate).inserted else { return nil }
+            if regularAppPIDs.contains(candidate) { return candidate }
+            guard let parent = parentPID(candidate) else { return nil }
+            candidate = parent
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -83,6 +107,9 @@ final class MusicAutoLaunchBlocker {
 @MainActor
 @Observable
 final class AudioMixerService {
+    private let defaults: UserDefaults
+    private let inventoryProvider: (@MainActor () -> AudioMixerInventory)?
+    private let engineFactory: @MainActor ([AudioObjectID], Float, String) -> (any AudioGainEngine)?
     private(set) var apps: [AudioMixerApp] = []
     private(set) var outputDevices: [AudioOutputDevice] = []
     private(set) var inputDevices: [AudioInputDevice] = []
@@ -97,7 +124,7 @@ final class AudioMixerService {
     var disconnectVolume: Double {
         didSet {
             disconnectVolume = min(max(disconnectVolume, 0), 1)
-            UserDefaults.standard.set(disconnectVolume, forKey: "utility.disconnectOutputVolume")
+            defaults.set(disconnectVolume, forKey: "utility.disconnectOutputVolume")
         }
     }
 
@@ -110,14 +137,26 @@ final class AudioMixerService {
     private var previousDefaultOutputUID: String?
     private var previousDefaultOutputName: String?
 
-    init() {
-        lowersVolumeAfterHeadphoneDisconnect = UserDefaults.standard.bool(
+    init(
+        defaults: UserDefaults = .standard,
+        inventoryProvider: (@MainActor () -> AudioMixerInventory)? = nil,
+        engineFactory: @escaping @MainActor ([AudioObjectID], Float, String) -> (any AudioGainEngine)? = AudioMixerService.makeEngine
+    ) {
+        self.defaults = defaults
+        self.inventoryProvider = inventoryProvider
+        self.engineFactory = engineFactory
+        lowersVolumeAfterHeadphoneDisconnect = defaults.bool(
             forKey: "utility.lowerVolumeAfterHeadphoneDisconnect"
         )
-        disconnectVolume = UserDefaults.standard.object(forKey: "utility.disconnectOutputVolume") == nil
+        disconnectVolume = defaults.object(forKey: "utility.disconnectOutputVolume") == nil
             ? 0.25
-            : UserDefaults.standard.double(forKey: "utility.disconnectOutputVolume")
-        pinnedInputUID = UserDefaults.standard.string(forKey: "utility.pinnedInputUID")
+            : defaults.double(forKey: "utility.disconnectOutputVolume")
+        pinnedInputUID = defaults.string(forKey: "utility.pinnedInputUID")
+    }
+
+    private static func makeEngine(objects: [AudioObjectID], gain: Float, output: String) -> (any AudioGainEngine)? {
+        guard #available(macOS 14.4, *) else { return nil }
+        return ProcessGainEngine(audioObjects: objects, gain: gain, outputDeviceUID: output)
     }
 
     var isSupported: Bool {
@@ -127,25 +166,63 @@ final class AudioMixerService {
 
     func start() {
         consumerCount += 1
+        ensureMonitoring()
+    }
+
+    private func ensureMonitoring() {
         guard !isRunning else { return }
         isRunning = true
-        refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        refresh()
     }
 
     func stop() {
         consumerCount = max(consumerCount - 1, 0)
-        guard consumerCount == 0 else { return }
-        timer?.invalidate()
-        timer = nil
+        updateMonitoring()
+    }
+
+    func refreshForCommand() { refresh() }
+
+    func restoreMixingPreferences() { updateMonitoring() }
+
+    func shutdown() {
+        consumerCount = 0
+        stopMonitoring()
         engines.values.forEach { $0.stop() }
         engines.removeAll()
+    }
+
+    private func updateMonitoring() {
+        if consumerCount > 0 || !engines.isEmpty || !savedVolumes().isEmpty || !savedRoutes().isEmpty {
+            ensureMonitoring()
+        } else {
+            stopMonitoring()
+        }
+    }
+
+    private func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
         isRunning = false
     }
 
     func refresh() {
+        if let inventoryProvider {
+            let inventory = inventoryProvider()
+            outputDevices = inventory.outputs
+            let volumes = savedVolumes()
+            let routes = savedRoutes()
+            apps = inventory.apps.map { app in
+                var row = app
+                row.volume = volumes[app.bundleIdentifier ?? app.id] ?? 1
+                row.outputDeviceUID = routes[app.bundleIdentifier ?? app.id]
+                return row
+            }
+            reconcileEngines()
+            return
+        }
         let devices = Self.readOutputDevices()
         outputDevices = devices
         let defaultDevice = devices.first(where: \AudioOutputDevice.isDefault)
@@ -185,18 +262,30 @@ final class AudioMixerService {
 
         let saved = savedVolumes()
         let routes = savedRoutes()
+        let regularApps = Dictionary(uniqueKeysWithValues: NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && !$0.isTerminated }
+            .map { ($0.processIdentifier, $0) })
+        let regularAppPIDs = Set(regularApps.keys)
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        var parents: [pid_t: pid_t] = [:]
         var grouped: [String: AudioMixerApp] = [:]
         for object in Self.audioProcessObjects() {
             var pid: pid_t = 0
             guard Self.read(object: object, selector: kAudioProcessPropertyPID, value: &pid),
                   pid > 0,
-                  pid != ProcessInfo.processInfo.processIdentifier,
-                  let application = NSRunningApplication(processIdentifier: pid),
-                  application.activationPolicy == .regular else { continue }
+                  let ownerPID = AudioMixerProcessOwner.resolve(
+                    pid: pid, regularAppPIDs: regularAppPIDs, ownPID: ownPID,
+                    parentPID: { child in
+                        if let cached = parents[child] { return cached > 0 ? cached : nil }
+                        let parent = Self.parentPID(of: child)
+                        parents[child] = parent ?? 0
+                        return parent
+                    }
+                  ), let application = regularApps[ownerPID] else { continue }
 
             let bundleIdentifier = application.bundleIdentifier
-            let rowID = bundleIdentifier ?? "pid:\(pid)"
-            let name = application.localizedName ?? "Process \(pid)"
+            let rowID = bundleIdentifier ?? "pid:\(ownerPID)"
+            let name = application.localizedName ?? "Process \(ownerPID)"
             var running: UInt32 = 0
             _ = Self.read(object: object, selector: kAudioProcessPropertyIsRunningOutput, value: &running)
             let volume = saved[bundleIdentifier ?? rowID] ?? 1
@@ -216,7 +305,7 @@ final class AudioMixerService {
             } else {
                 grouped[rowID] = AudioMixerApp(
                     id: rowID,
-                    pid: pid,
+                    pid: ownerPID,
                     name: name,
                     bundleIdentifier: bundleIdentifier,
                     audioObjects: [object],
@@ -240,10 +329,12 @@ final class AudioMixerService {
         apps[index].volume = volume
         persist(volume: volume, for: app)
         applyEngine(for: apps[index])
+        updateMonitoring()
     }
 
     func toggleMute(_ app: AudioMixerApp) {
-        setVolume(app.volume > 0.001 ? 0 : 1, for: app)
+        guard let current = apps.first(where: { $0.id == app.id }) else { return }
+        setVolume(current.volume > 0.001 ? 0 : 1, for: current)
     }
 
     func setOutputDevice(_ device: AudioOutputDevice?, for app: AudioMixerApp) {
@@ -253,6 +344,7 @@ final class AudioMixerService {
         apps[index].outputDeviceUID = route
         persist(route: route, for: app)
         applyEngine(for: apps[index])
+        updateMonitoring()
     }
 
     func setSystemVolume(_ value: Double) {
@@ -306,14 +398,14 @@ final class AudioMixerService {
 
     func setLowersVolumeAfterHeadphoneDisconnect(_ enabled: Bool) {
         lowersVolumeAfterHeadphoneDisconnect = enabled
-        UserDefaults.standard.set(enabled, forKey: "utility.lowerVolumeAfterHeadphoneDisconnect")
+        defaults.set(enabled, forKey: "utility.lowerVolumeAfterHeadphoneDisconnect")
     }
 
     func selectInput(_ device: AudioInputDevice) {
         if Self.setDefaultInput(device.id) {
             if pinnedInputUID != nil {
                 pinnedInputUID = device.uid
-                UserDefaults.standard.set(device.uid, forKey: "utility.pinnedInputUID")
+                defaults.set(device.uid, forKey: "utility.pinnedInputUID")
             }
             errorMessage = nil
             refresh()
@@ -323,11 +415,11 @@ final class AudioMixerService {
     func toggleInputPin() {
         if pinnedInputUID != nil {
             pinnedInputUID = nil
-            UserDefaults.standard.removeObject(forKey: "utility.pinnedInputUID")
+            defaults.removeObject(forKey: "utility.pinnedInputUID")
             errorMessage = nil
         } else if let current = inputDevices.first(where: \AudioInputDevice.isDefault) {
             pinnedInputUID = current.uid
-            UserDefaults.standard.set(current.uid, forKey: "utility.pinnedInputUID")
+            defaults.set(current.uid, forKey: "utility.pinnedInputUID")
             errorMessage = "Pinned \(current.name) as the preferred microphone."
         }
     }
@@ -378,6 +470,7 @@ final class AudioMixerService {
         for app in apps where needsEngine(app) {
             applyEngine(for: app)
         }
+        updateMonitoring()
     }
 
     private static func isPrivateListeningDevice(named name: String) -> Bool {
@@ -400,18 +493,13 @@ final class AudioMixerService {
             ? (app.outputDeviceUID ?? defaultOutputUID) : defaultOutputUID
         if let existing = engines[app.id],
            existing.audioObjects == app.audioObjects,
-           existing.gain == Float(app.volume),
            existing.outputDeviceUID == outputUID {
+            existing.setGain(Float(app.volume))
             return
         }
 
         let previous = engines[app.id]
-        guard #available(macOS 14.4, *),
-              let replacement = ProcessGainEngine(
-                audioObjects: app.audioObjects,
-                gain: Float(app.volume),
-                outputDeviceUID: outputUID
-              ) else {
+        guard let replacement = engineFactory(app.audioObjects, Float(app.volume), outputUID) else {
             errorMessage = "MacScope could not create an audio tap. Allow MacScope in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
             needsSystemAudioPermission = true
             return
@@ -423,7 +511,7 @@ final class AudioMixerService {
     }
 
     private func savedVolumes() -> [String: Double] {
-        let values = UserDefaults.standard.dictionary(forKey: defaultsKey) ?? [:]
+        let values = defaults.dictionary(forKey: defaultsKey) ?? [:]
         return values.reduce(into: [:]) { result, pair in
             guard let number = pair.value as? NSNumber else { return }
             result[pair.key] = UtilitySupport.sanitizedAppVolume(number.doubleValue)
@@ -431,7 +519,7 @@ final class AudioMixerService {
     }
 
     private func savedRoutes() -> [String: String] {
-        UserDefaults.standard.dictionary(forKey: routesDefaultsKey) as? [String: String] ?? [:]
+        defaults.dictionary(forKey: routesDefaultsKey) as? [String: String] ?? [:]
     }
 
     private func needsEngine(_ app: AudioMixerApp) -> Bool {
@@ -446,7 +534,7 @@ final class AudioMixerService {
         var values = savedVolumes()
         if UtilitySupport.isUnityVolume(volume) { values.removeValue(forKey: key) }
         else { values[key] = volume }
-        UserDefaults.standard.set(values, forKey: defaultsKey)
+        defaults.set(values, forKey: defaultsKey)
     }
 
     private func persist(route: String?, for app: AudioMixerApp) {
@@ -454,7 +542,7 @@ final class AudioMixerService {
         var values = savedRoutes()
         if let route { values[key] = route }
         else { values.removeValue(forKey: key) }
-        UserDefaults.standard.set(values, forKey: routesDefaultsKey)
+        defaults.set(values, forKey: routesDefaultsKey)
     }
 
     private static func audioProcessObjects() -> [AudioObjectID] {
@@ -475,6 +563,13 @@ final class AudioMixerService {
             AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &objects
         ) == noErr else { return [] }
         return objects
+    }
+
+    private static func parentPID(of pid: pid_t) -> pid_t? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return pid_t(info.pbi_ppid)
     }
 
     private static func readOutputDevices() -> [AudioOutputDevice] {
@@ -743,17 +838,39 @@ final class AudioMixerService {
     }
 }
 
-private protocol AudioGainEngine: AnyObject {
+protocol AudioGainEngine: AnyObject {
     var audioObjects: [AudioObjectID] { get }
     var gain: Float { get }
     var outputDeviceUID: String { get }
+    func setGain(_ value: Float)
     func stop()
+}
+
+// C11 atomics keep the real-time callback free of locks and allocations while
+// the main actor changes gain. The callback retains this storage until stopped.
+final class AudioGainValue: @unchecked Sendable {
+    private let storage: OpaquePointer
+
+    init(_ value: Float) {
+        guard let storage = MacScopeAudioGainCreate(Float(UtilitySupport.sanitizedAppVolume(Double(value)))) else {
+            fatalError("Unable to allocate audio gain storage.")
+        }
+        self.storage = storage
+    }
+
+    deinit { MacScopeAudioGainDestroy(storage) }
+
+    var value: Float {
+        get { MacScopeAudioGainGet(storage) }
+        set { MacScopeAudioGainSet(storage, Float(UtilitySupport.sanitizedAppVolume(Double(newValue)))) }
+    }
 }
 
 @available(macOS 14.4, *)
 private final class ProcessGainEngine: AudioGainEngine {
     let audioObjects: [AudioObjectID]
-    let gain: Float
+    private let gainValue: AudioGainValue
+    var gain: Float { gainValue.value }
     let outputDeviceUID: String
 
     private var tapID = AudioObjectID(0)
@@ -763,7 +880,7 @@ private final class ProcessGainEngine: AudioGainEngine {
     init?(audioObjects: [AudioObjectID], gain: Float, outputDeviceUID: String) {
         guard !audioObjects.isEmpty else { return nil }
         self.audioObjects = audioObjects
-        self.gain = min(max(gain, 0), Float(UtilitySupport.maximumAppVolume))
+        self.gainValue = AudioGainValue(gain)
         self.outputDeviceUID = outputDeviceUID
 
         let tap = CATapDescription(stereoMixdownOfProcesses: audioObjects)
@@ -790,7 +907,7 @@ private final class ProcessGainEngine: AudioGainEngine {
             return nil
         }
 
-        let fixedGain = self.gain
+        let gainValue = self.gainValue
         guard AudioDeviceCreateIOProcIDWithBlock(
             &ioProc, aggregateID, nil
         , { _, input, _, output, _ in
@@ -799,7 +916,7 @@ private final class ProcessGainEngine: AudioGainEngine {
             guard let source = sources.reversed().first(where: {
                 $0.mData != nil && $0.mNumberChannels > 0
             }) else { return }
-            Self.render(source: source, into: destinations, gain: fixedGain)
+            AudioGainRenderer.render(source: source, into: destinations, gain: gainValue.value)
         }) == noErr else {
             AudioHardwareDestroyAggregateDevice(aggregateID)
             AudioHardwareDestroyProcessTap(tapID)
@@ -814,6 +931,10 @@ private final class ProcessGainEngine: AudioGainEngine {
         }
     }
 
+    deinit { stop() }
+
+    func setGain(_ value: Float) { gainValue.value = value }
+
     func stop() {
         if let ioProc, aggregateID != 0 {
             AudioDeviceStop(aggregateID, ioProc)
@@ -823,8 +944,10 @@ private final class ProcessGainEngine: AudioGainEngine {
         if aggregateID != 0 { AudioHardwareDestroyAggregateDevice(aggregateID); aggregateID = 0 }
         if tapID != 0 { AudioHardwareDestroyProcessTap(tapID); tapID = 0 }
     }
+}
 
-    private static func render(
+enum AudioGainRenderer {
+    static func render(
         source: AudioBuffer,
         into output: UnsafeMutableAudioBufferListPointer,
         gain: Float

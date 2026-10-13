@@ -107,7 +107,7 @@ final class MacScopeMCPUtilityController: NSObject {
     ) throws -> MacScopeMCPJSONValue {
         switch action {
         case "sound.refresh":
-            model.audioMixer.start(); model.audioMixer.refresh()
+            model.audioMixer.refreshForCommand()
         case "sound.set-system-volume":
             model.audioMixer.setSystemVolume(try arguments.number("value", range: 0...1))
         case "sound.toggle-system-mute":
@@ -414,7 +414,7 @@ final class MacScopeMCPUtilityController: NSObject {
         let value: MacScopeMCPJSONValue
         switch module {
         case .sound:
-            model.audioMixer.start(); model.audioMixer.refresh()
+            model.audioMixer.refreshForCommand()
             value = .object([
                 "running": .bool(model.audioMixer.isRunning),
                 "system_volume": model.audioMixer.systemVolume.json,
@@ -502,7 +502,7 @@ final class MacScopeMCPUtilityController: NSObject {
     }
 
     private func audioApp(pid: Int32) throws -> AudioMixerApp {
-        model.audioMixer.start(); model.audioMixer.refresh()
+        model.audioMixer.refreshForCommand()
         guard let app = model.audioMixer.apps.first(where: { $0.pid == pid }) else {
             throw ControllerError.invalidArgument("pid", "The PID is not in the current audio application list.")
         }

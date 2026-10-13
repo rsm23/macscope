@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Privacy policy for MacScope and MacScope Remote." />
+    <meta name="theme-color" content="#03070c" />
+    <title>Privacy — MacScope Remote</title>
+    <link rel="icon" href="assets/macscope-app-icon.png" type="image/png" />
+    <style>
+      :root { color-scheme: dark; font-family: "SF Pro Text", "Helvetica Neue", sans-serif; background: #03070c; color: #f4f8fc; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: radial-gradient(circle at 70% 0, #0b2845, transparent 28rem), #03070c; }
+      main { width: min(47rem, calc(100% - 2.5rem)); margin: 0 auto; padding: 5rem 0 8rem; }
+      a { color: #66c7ff; }
+      .brand { display: inline-flex; align-items: center; gap: .7rem; color: white; text-decoration: none; font-weight: 750; }
+      .brand img { width: 2.3rem; height: 2.3rem; border-radius: .55rem; }
+      .eyebrow { margin: 5rem 0 .9rem; color: #66c7ff; font: .72rem/1.4 ui-monospace, monospace; letter-spacing: .13em; }
+      h1 { margin: 0; font-size: clamp(3rem, 8vw, 5.5rem); line-height: .94; letter-spacing: -.065em; }
+      h2 { margin: 3.2rem 0 1rem; font-size: 1.35rem; }
+      p, li { color: #a9b5c2; font-size: 1rem; line-height: 1.75; }
+      strong { color: #eef7ff; }
+      .updated { margin-top: 1.2rem; color: #748497; font: .72rem/1.5 ui-monospace, monospace; }
+      .note { margin: 2rem 0; padding: 1.2rem 1.35rem; border: 1px solid #193c5e; border-radius: .8rem; background: rgba(10, 34, 57, .55); }
+      footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid #172430; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="index.html"><img src="assets/macscope-app-icon.png" alt="" /> MacScope</a>
+      <p class="eyebrow">PRIVACY POLICY</p>
+      <h1>Private by design.</h1>
+      <p class="updated">Effective August 31, 2026</p>
+      <p class="note"><strong>Short version:</strong> MacScope Remote does not sell data, run advertising, or store live Mac telemetry on the relay. Pairing is opt-in and can be reset from the Mac at any time.</p>
+
+      <h2>What the app processes</h2>
+      <p>When you pair MacScope Remote, the service processes the Mac name, app version, member display name, device name, platform, role, connection timestamps, and cryptographic session identifiers needed to connect your devices. If notifications are enabled, it also stores an Expo push token and your notification preferences.</p>
+      <p>While an authorized mobile device is connected, compact system metrics and requested redacted data travel through an encrypted relay connection. The relay forwards this information between your Mac and mobile device and does not persist the live telemetry stream.</p>
+
+      <h2>Command and security records</h2>
+      <p>For security and accountability, the relay keeps a bounded audit record for up to 30 days. It contains the acting member, action identifier, risk classification, outcome, error code when applicable, and timestamp. Process names, filesystem paths, clipboard content, captured files, command arguments, and live telemetry are excluded from this audit record.</p>
+
+      <h2>On-device storage</h2>
+      <p>Pairing credentials and preferences are stored in the platform-protected Keychain or SecureStore on your devices. Captures or artifacts you explicitly download are stored locally on your mobile device and remain under your control.</p>
+
+      <h2>Service providers</h2>
+      <p>MacScope Remote uses Cloudflare to operate its relay and control-plane database, Expo Application Services for app builds and optional push delivery, Apple for iOS distribution and push infrastructure, and Google for Android distribution. These providers process limited technical data according to their own policies.</p>
+
+      <h2>Permissions</h2>
+      <p>Camera access is used only to scan a MacScope pairing QR code. Notifications are optional. Face ID, Touch ID, or Android device authentication may be used locally to confirm sensitive actions; biometric data is handled by the operating system and is not received by MacScope.</p>
+
+      <h2>Control and deletion</h2>
+      <p>You can revoke an individual member or device from MacScope. Resetting Remote on the Mac revokes the environment and deletes its paired members, sessions, pairings, and related records from the service. You can also remove a paired environment from the mobile app.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy questions or deletion assistance, open an issue in the <a href="https://github.com/rsm23/macscope/issues">MacScope issue tracker</a>.</p>
+      <footer><a href="index.html">← Back to MacScope</a> · <a href="support.html">Support</a></footer>
+    </main>
+  </body>
+</html>

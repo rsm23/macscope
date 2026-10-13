@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Support for MacScope and MacScope Remote." />
+    <meta name="theme-color" content="#03070c" />
+    <title>Support — MacScope Remote</title>
+    <link rel="icon" href="assets/macscope-app-icon.png" type="image/png" />
+    <style>
+      :root { color-scheme: dark; font-family: "SF Pro Text", "Helvetica Neue", sans-serif; background: #03070c; color: #f4f8fc; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: radial-gradient(circle at 72% 0, #0b2845, transparent 28rem), #03070c; }
+      main { width: min(54rem, calc(100% - 2.5rem)); margin: 0 auto; padding: 5rem 0 8rem; }
+      a { color: #66c7ff; }
+      .brand { display: inline-flex; align-items: center; gap: .7rem; color: white; text-decoration: none; font-weight: 750; }
+      .brand img { width: 2.3rem; height: 2.3rem; border-radius: .55rem; }
+      .eyebrow { margin: 5rem 0 .9rem; color: #66c7ff; font: .72rem/1.4 ui-monospace, monospace; letter-spacing: .13em; }
+      h1 { margin: 0; font-size: clamp(3rem, 8vw, 5.5rem); line-height: .94; letter-spacing: -.065em; }
+      h2 { margin: 0 0 .75rem; font-size: 1.2rem; }
+      p, li { color: #a9b5c2; font-size: 1rem; line-height: 1.7; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 3rem; }
+      .card { padding: 1.5rem; border: 1px solid #19344e; border-radius: .9rem; background: rgba(8, 26, 43, .58); }
+      .card p { margin-bottom: 0; }
+      .steps { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid #172430; }
+      footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid #172430; }
+      @media (max-width: 650px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="brand" href="index.html"><img src="assets/macscope-app-icon.png" alt="" /> MacScope</a>
+      <p class="eyebrow">SUPPORT</p>
+      <h1>Let’s get you connected.</h1>
+      <div class="grid">
+        <article class="card"><h2>Pairing</h2><p>On the Mac, open Settings → Remote control, enable the relay, then create and scan an owner QR code from the mobile app.</p></article>
+        <article class="card"><h2>Mac appears offline</h2><p>Confirm Remote is enabled on the Mac, both devices can reach the internet, and the paired device has not been revoked.</p></article>
+        <article class="card"><h2>An action is unavailable</h2><p>Your mobile role, the Mac’s local allowlist, required macOS permission, and action risk must all permit it. The Mac always has final authority.</p></article>
+        <article class="card"><h2>Reset access</h2><p>Reset Remote on the Mac to revoke every paired device. You will need to pair again with a new one-time QR code.</p></article>
+      </div>
+      <section class="steps">
+        <h2>Report a problem</h2>
+        <p>Open a <a href="https://github.com/rsm23/macscope/issues/new">GitHub issue</a> with your MacScope version, mobile platform and version, and the visible error message. Do not include pairing QR codes, access tokens, private paths, clipboard content, or personal telemetry.</p>
+        <p>Technical setup and security details are available in the <a href="https://github.com/rsm23/macscope/blob/main/docs/REMOTE_CONTROL.md">Remote Control guide</a>.</p>
+      </section>
+      <footer><a href="index.html">← Back to MacScope</a> · <a href="privacy.html">Privacy</a></footer>
+    </main>
+  </body>
+</html>

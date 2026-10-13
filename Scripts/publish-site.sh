@@ -23,7 +23,7 @@ checkout="$temporary_dir/checkout"
 git clone --quiet --depth 1 --single-branch --branch gh-pages "$remote_url" "$checkout"
 mkdir "$temporary_dir/site"
 git archive HEAD:site | tar -x -C "$temporary_dir/site"
-rsync -a --delete --exclude=.git "$temporary_dir/site/" "$checkout/"
+rsync -a --checksum --delete --exclude=.git "$temporary_dir/site/" "$checkout/"
 git -C "$checkout" add --all
 if ! git -C "$checkout" diff --cached --quiet; then
   git -C "$checkout" \

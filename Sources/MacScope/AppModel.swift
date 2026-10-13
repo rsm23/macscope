@@ -60,14 +60,15 @@ final class AppModel {
     init(
         engine: TelemetryEngine = TelemetryEngine(),
         alertNotifications: UsageAlertNotificationController = UsageAlertNotificationController(),
-        automaticallyStarts: Bool = false
+        automaticallyStarts: Bool = false,
+        startsUtilityServer: Bool = true
     ) {
         self.engine = engine
         self.alertNotifications = alertNotifications
         if UtilityFeatureStore.isEnabled(.clipboard) { clipboard.restorePreference() }
         // MCP utility requests must work for a menu-bar-only launch even when the
         // main window is restored closed and its SwiftUI task never appears.
-        mcpUtilityController.start()
+        if startsUtilityServer { mcpUtilityController.start() }
         if automaticallyStarts {
             // A restored menu-bar-only launch may never create the main window,
             // so its `.task` cannot be the sole owner of telemetry and remote
@@ -139,6 +140,7 @@ final class AppModel {
         guard !didStartAutomatically else { return }
         didStartAutomatically = true
         if UtilityFeatureStore.isEnabled(.capture) { screenshots.refresh() }
+        audioMixer.restoreMixingPreferences()
         start()
         remoteControl.startIfEnabled()
     }

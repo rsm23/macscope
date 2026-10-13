@@ -148,7 +148,7 @@ struct ShelfDropZoneView: View {
             return !urls.isEmpty
         } isTargeted: { _ in }
         .background(ShelfDropZoneWindowConfigurator().frame(width: 0, height: 0))
-        .onAppear { service.captureFrontmostFinderDestination() }
+        .onAppear { service.requestFrontmostFinderDestination() }
     }
 
     private var shelfContent: some View {

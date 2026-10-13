@@ -97,6 +97,7 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
     var showShelfDropZone: (() -> Void)?
     var hideShelfDropZoneIfEmpty: (() -> Void)?
     var captureShelfDestination: (() -> Void)?
+    var hasShelfItems: (() -> Bool)?
     var captureSelection: (() -> Void)?
     var captureFullScreen: (() -> Void)?
     var copyLatestCapture: (() -> Void)?
@@ -154,8 +155,8 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
         globalHotKeys = manager
     }
 
-    private func handleShelfEvent(_ event: NSEvent) {
-        captureShelfDestination?()
+    func handleShelfEvent(_ event: NSEvent) {
+        if hasShelfItems?() == true { captureShelfDestination?() }
         checkShelfDropZone(event)
         checkShelfEdge()
     }
@@ -235,8 +236,16 @@ final class MacScopeApplicationDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MacScopeApp: App {
     @NSApplicationDelegateAdaptor(MacScopeApplicationDelegate.self) private var appDelegate
-    @State private var model = AppModel(automaticallyStarts: true)
+    @State private var model: AppModel
     @AppStorage("appAppearance") private var appAppearance = MacScopeAppearance.system.rawValue
+
+    init() {
+        self.init(model: AppModel(automaticallyStarts: true))
+    }
+
+    init(model: AppModel) {
+        _model = State(initialValue: model)
+    }
 
     private var preferredColorScheme: ColorScheme? {
         MacScopeAppearance(rawValue: appAppearance)?.colorScheme
@@ -321,7 +330,7 @@ struct MacScopeApp: App {
             MenuBarPanel(model: model)
                 .preferredColorScheme(preferredColorScheme)
         } label: {
-            MenuBarStatusLabel(presentation: model.menuBarPresentation)
+            LiveMenuBarStatusLabel(model: model)
                 .background(DockPreviewBridge(delegate: appDelegate, model: model))
         }
         .menuBarExtraStyle(.window)
@@ -379,8 +388,9 @@ private struct DockPreviewBridge: View {
                     dismissWindow(id: "shelf-drop-zone")
                 }
                 delegate.captureShelfDestination = {
-                    model.snippetShelf.captureFrontmostFinderDestination()
+                    model.snippetShelf.requestFrontmostFinderDestination()
                 }
+                delegate.hasShelfItems = { !model.snippetShelf.shelfItems.isEmpty }
                 delegate.captureSelection = {
                     model.screenshots.capture(.selection, copyToClipboard: true)
                 }

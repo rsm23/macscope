@@ -29,12 +29,33 @@ struct CommandBarFileResult: Identifiable, Hashable {
     var folder: String { url.deletingLastPathComponent().path(percentEncoded: false) }
 }
 
-struct CommandBarMenuCommand: Identifiable {
+// AXUIElement is an immutable remote handle. Reads and actions are serialized on
+// CommandBarAccessibilityWorker; no mutable AppKit state crosses that boundary.
+struct CommandBarMenuCommand: Identifiable, @unchecked Sendable {
     let id: String
     let title: String
     let path: String
     let shortcut: String?
     let element: AXUIElement
+}
+
+struct CommandBarOriginContext: Sendable {
+    var selectedText: String?
+    var menuCommands: [CommandBarMenuCommand] = []
+}
+
+private actor CommandBarAccessibilityWorker {
+    static let shared = CommandBarAccessibilityWorker()
+
+    func read(pid: pid_t, using reader: @Sendable (pid_t) -> CommandBarOriginContext) -> CommandBarOriginContext {
+        guard !Task.isCancelled else { return CommandBarOriginContext() }
+        return reader(pid)
+    }
+
+    func perform(_ command: CommandBarMenuCommand) -> AXError {
+        AXUIElementSetMessagingTimeout(command.element, 0.2)
+        return AXUIElementPerformAction(command.element, kAXPressAction as CFString)
+    }
 }
 
 @MainActor
@@ -53,13 +74,17 @@ final class CommandBarService {
     private(set) var menuCommands: [CommandBarMenuCommand] = []
 
     private var originPID: pid_t?
+    private let originReader: @Sendable (pid_t) -> CommandBarOriginContext
+    @ObservationIgnored private var originTask: Task<Void, Never>?
+    @ObservationIgnored private var originRevision: UInt64 = 0
     private var fileSearchTask: Task<Void, Never>?
     private let searchFoldersKey = "commandBar.searchFolders"
     private let scriptsKey = "commandBar.scripts"
     private let appAliasesKey = "commandBar.appAliases"
     private let pinnedAppsKey = "commandBar.pinnedApps"
 
-    init() {
+    init(originReader: @escaping @Sendable (pid_t) -> CommandBarOriginContext = CommandBarService.readOrigin) {
+        self.originReader = originReader
         loadConfiguration()
     }
 
@@ -158,11 +183,25 @@ final class CommandBarService {
     func captureOrigin() {
         guard let application = NSWorkspace.shared.frontmostApplication,
               application.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-        originPID = application.processIdentifier
-        originApplicationName = application.localizedName
-        selectedText = Self.readSelectedText(pid: application.processIdentifier)
-        menuCommands = Self.readMenuCommands(pid: application.processIdentifier)
+        captureOrigin(pid: application.processIdentifier, applicationName: application.localizedName)
+    }
+
+    func captureOrigin(pid: pid_t, applicationName: String?) {
+        originTask?.cancel()
+        originRevision &+= 1
+        let revision = originRevision
+        originPID = pid
+        originApplicationName = applicationName
+        selectedText = nil
+        menuCommands = []
         statusMessage = nil
+        originTask = Task { [weak self, originReader] in
+            let context = await CommandBarAccessibilityWorker.shared.read(pid: pid, using: originReader)
+            guard !Task.isCancelled, let self, self.originRevision == revision else { return }
+            self.selectedText = context.selectedText
+            self.menuCommands = context.menuCommands
+            self.originTask = nil
+        }
     }
 
     func perform(_ command: CommandBarMenuCommand) {
@@ -175,10 +214,12 @@ final class CommandBarService {
            !application.isTerminated {
             application.activate(options: [.activateAllWindows])
         }
-        let result = AXUIElementPerformAction(command.element, kAXPressAction as CFString)
-        statusMessage = result == .success
-            ? "Ran \(command.path)."
-            : "The app did not accept \(command.title) (Accessibility error \(result.rawValue))."
+        Task { [weak self] in
+            let result = await CommandBarAccessibilityWorker.shared.perform(command)
+            self?.statusMessage = result == .success
+                ? "Ran \(command.path)."
+                : "The app did not accept \(command.title) (Accessibility error \(result.rawValue))."
+        }
     }
 
     func insertAtOrigin(_ text: String) {
@@ -367,9 +408,14 @@ final class CommandBarService {
         persistConfiguration()
     }
 
-    private static func readSelectedText(pid: pid_t) -> String? {
+    nonisolated private static func readOrigin(pid: pid_t) -> CommandBarOriginContext {
+        CommandBarOriginContext(selectedText: readSelectedText(pid: pid), menuCommands: readMenuCommands(pid: pid))
+    }
+
+    nonisolated private static func readSelectedText(pid: pid_t) -> String? {
         guard AXIsProcessTrusted() else { return nil }
         let application = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(application, 0.2)
         var focusedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             application,
@@ -377,6 +423,7 @@ final class CommandBarService {
             &focusedValue
         ) == .success, let focusedValue else { return nil }
         let focusedElement = unsafeDowncast(focusedValue, to: AXUIElement.self)
+        AXUIElementSetMessagingTimeout(focusedElement, 0.2)
         var selectedValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             focusedElement,
@@ -387,9 +434,10 @@ final class CommandBarService {
         return trimmed.isEmpty ? nil : String(trimmed.prefix(2_000))
     }
 
-    private static func readMenuCommands(pid: pid_t) -> [CommandBarMenuCommand] {
+    nonisolated private static func readMenuCommands(pid: pid_t) -> [CommandBarMenuCommand] {
         guard AXIsProcessTrusted() else { return [] }
         let application = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(application, 0.2)
         var menuBarValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             application,
@@ -398,17 +446,26 @@ final class CommandBarService {
         ) == .success, let menuBarValue else { return [] }
         let menuBar = unsafeDowncast(menuBarValue, to: AXUIElement.self)
         var commands: [CommandBarMenuCommand] = []
-        collectMenuCommands(from: menuBar, path: [], depth: 0, into: &commands)
+        var remainingElements = 800
+        collectMenuCommands(
+            from: menuBar, path: [], depth: 0, into: &commands,
+            deadline: ContinuousClock.now.advanced(by: .seconds(1)),
+            remainingElements: &remainingElements
+        )
         return Array(commands.prefix(400))
     }
 
-    private static func collectMenuCommands(
+    nonisolated private static func collectMenuCommands(
         from element: AXUIElement,
         path: [String],
         depth: Int,
-        into commands: inout [CommandBarMenuCommand]
+        into commands: inout [CommandBarMenuCommand],
+        deadline: ContinuousClock.Instant,
+        remainingElements: inout Int
     ) {
-        guard depth < 8, commands.count < 400 else { return }
+        guard depth < 8, commands.count < 400, remainingElements > 0,
+              !Task.isCancelled, ContinuousClock.now < deadline else { return }
+        AXUIElementSetMessagingTimeout(element, 0.2)
         var childrenValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element,
@@ -416,6 +473,9 @@ final class CommandBarService {
             &childrenValue
         ) == .success, let children = childrenValue as? [AXUIElement] else { return }
         for child in children where commands.count < 400 {
+            guard remainingElements > 0, !Task.isCancelled, ContinuousClock.now < deadline else { return }
+            remainingElements -= 1
+            AXUIElementSetMessagingTimeout(child, 0.2)
             let title = axString(child, attribute: kAXTitleAttribute)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let nextPath = title.isEmpty ? path : path + [title]
@@ -436,23 +496,26 @@ final class CommandBarService {
                     ))
                 }
             }
-            collectMenuCommands(from: child, path: nextPath, depth: depth + 1, into: &commands)
+            collectMenuCommands(
+                from: child, path: nextPath, depth: depth + 1, into: &commands,
+                deadline: deadline, remainingElements: &remainingElements
+            )
         }
     }
 
-    private static func axString(_ element: AXUIElement, attribute: String) -> String {
+    nonisolated private static func axString(_ element: AXUIElement, attribute: String) -> String {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return "" }
         return value as? String ?? ""
     }
 
-    private static func axBoolean(_ element: AXUIElement, attribute: String) -> Bool? {
+    nonisolated private static func axBoolean(_ element: AXUIElement, attribute: String) -> Bool? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
         return (value as? NSNumber)?.boolValue
     }
 
-    private static func menuShortcut(_ element: AXUIElement) -> String? {
+    nonisolated private static func menuShortcut(_ element: AXUIElement) -> String? {
         let character = axString(element, attribute: kAXMenuItemCmdCharAttribute)
         guard !character.isEmpty else { return nil }
         var modifiersValue: CFTypeRef?

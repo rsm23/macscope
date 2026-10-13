@@ -33,7 +33,7 @@ enum ScreenshotPostCaptureAction: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct ScreenshotRecord: Identifiable, Equatable {
+struct ScreenshotRecord: Identifiable, Equatable, Sendable {
     let url: URL
     let createdAt: Date
     var id: URL { url }
@@ -51,9 +51,21 @@ struct ScreenshotFailure: LocalizedError, Sendable {
     var errorDescription: String? { message }
 }
 
+private actor ScreenshotLibraryWorker {
+    static let shared = ScreenshotLibraryWorker()
+
+    func scan(in folder: URL, using scanner: @Sendable (URL) throws -> [ScreenshotRecord]) throws -> [ScreenshotRecord] {
+        try Task.checkCancellation()
+        return try scanner(folder)
+    }
+}
+
 @MainActor
 @Observable
 final class ScreenshotService {
+    private let captureScanner: @Sendable (URL) throws -> [ScreenshotRecord]
+    @ObservationIgnored private var captureScanTask: Task<Void, Never>?
+    @ObservationIgnored private var captureScanRevision: UInt64 = 0
     private(set) var captures: [ScreenshotRecord] = []
     private(set) var isCapturing = false
     private(set) var countdownSeconds = 0
@@ -78,7 +90,8 @@ final class ScreenshotService {
         didSet { UserDefaults.standard.set(postCaptureAction.rawValue, forKey: "utility.capturePostAction") }
     }
 
-    init() {
+    init(captureScanner: @escaping @Sendable (URL) throws -> [ScreenshotRecord] = ScreenshotService.scanCaptures) {
+        self.captureScanner = captureScanner
         organizesByDate = UserDefaults.standard.bool(forKey: "utility.captureDatedFolders")
         filenamePrefix = UserDefaults.standard.string(forKey: "utility.captureFilenamePrefix") ?? "MacScope"
         exportsAt1x = UserDefaults.standard.bool(forKey: "utility.captureExport1x")
@@ -96,29 +109,44 @@ final class ScreenshotService {
     }
 
     func refresh() {
+        refresh(in: captureFolder)
+    }
+
+    func refresh(in folder: URL) {
         hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
-        do {
-            try FileManager.default.createDirectory(
-                at: captureFolder, withIntermediateDirectories: true
-            )
-            let keys: Set<URLResourceKey> = [.creationDateKey, .isRegularFileKey]
-            let enumerator = FileManager.default.enumerator(
-                at: captureFolder,
-                includingPropertiesForKeys: Array(keys),
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            )
-            captures = (enumerator?.allObjects as? [URL] ?? []).compactMap { url in
-                guard url.pathExtension.lowercased() == "png" else { return nil }
-                let values = try? url.resourceValues(forKeys: keys)
-                guard values?.isRegularFile == true else { return nil }
-                return ScreenshotRecord(
-                    url: url,
-                    createdAt: values?.creationDate ?? .distantPast
-                )
-            }.sorted { $0.createdAt > $1.createdAt }
-        } catch {
-            errorMessage = error.localizedDescription
+        captureScanTask?.cancel()
+        captureScanRevision &+= 1
+        let revision = captureScanRevision
+        captureScanTask = Task { [weak self, captureScanner] in
+            do {
+                let records = try await ScreenshotLibraryWorker.shared.scan(in: folder, using: captureScanner)
+                guard !Task.isCancelled, let self, self.captureScanRevision == revision else { return }
+                self.captures = records
+                self.captureScanTask = nil
+            } catch {
+                guard !Task.isCancelled, let self, self.captureScanRevision == revision else { return }
+                self.errorMessage = error.localizedDescription
+                self.captureScanTask = nil
+            }
         }
+    }
+
+    nonisolated private static func scanCaptures(in folder: URL) throws -> [ScreenshotRecord] {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let keys: Set<URLResourceKey> = [.creationDateKey, .isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return [] }
+        var records: [ScreenshotRecord] = []
+        for case let url as URL in enumerator {
+            try Task.checkCancellation()
+            guard url.pathExtension.lowercased() == "png" else { continue }
+            let values = try? url.resourceValues(forKeys: keys)
+            guard values?.isRegularFile == true else { continue }
+            records.append(ScreenshotRecord(url: url, createdAt: values?.creationDate ?? .distantPast))
+        }
+        return records.sorted { $0.createdAt > $1.createdAt }
     }
 
     func requestPermission() {
@@ -880,16 +908,24 @@ final class SnippetShelfService {
     private let snippetsKey = "utility.savedSnippets"
     private let finderDestinationProvider: @MainActor () -> URL?
     private let finderFocusProvider: @MainActor () -> Bool
+    private let finderPIDProvider: @MainActor () -> pid_t?
+    private let finderDestinationReader: @Sendable (pid_t) -> URL?
+    @ObservationIgnored private var finderDestinationTask: Task<Void, Never>?
+    @ObservationIgnored private var lastFinderDestinationRequest: ContinuousClock.Instant?
     private var expansionEngine: TextExpansionEngine?
 
     init(
         finderDestinationProvider: @escaping @MainActor () -> URL?
             = SnippetShelfService.currentFinderDestination,
         finderFocusProvider: @escaping @MainActor () -> Bool
-            = SnippetShelfService.isFinderFrontmost
+            = SnippetShelfService.isFinderFrontmost,
+        finderPIDProvider: @escaping @MainActor () -> pid_t? = SnippetShelfService.frontmostFinderPID,
+        finderDestinationReader: @escaping @Sendable (pid_t) -> URL? = SnippetShelfService.readFinderDestination
     ) {
         self.finderDestinationProvider = finderDestinationProvider
         self.finderFocusProvider = finderFocusProvider
+        self.finderPIDProvider = finderPIDProvider
+        self.finderDestinationReader = finderDestinationReader
         load()
         if UserDefaults.standard.bool(forKey: "utility.textExpansionEnabled") {
             setExpansionEnabled(true, requestPermission: false)
@@ -1016,6 +1052,29 @@ final class SnippetShelfService {
         return destinationFolder
     }
 
+    func requestFrontmostFinderDestination() {
+        guard !shelfItems.isEmpty else { return }
+        guard finderFocusProvider(), let pid = finderPIDProvider() else {
+            if destinationFolder != nil { destinationFolder = nil }
+            return
+        }
+        guard finderDestinationTask == nil else { return }
+        let now = ContinuousClock.now
+        if let lastFinderDestinationRequest,
+           lastFinderDestinationRequest.duration(to: now) < .milliseconds(250) { return }
+        lastFinderDestinationRequest = now
+        finderDestinationTask = Task { [weak self, finderDestinationReader] in
+            let destination = await Task.detached(priority: .utility) {
+                finderDestinationReader(pid)
+            }.value
+            guard let self else { return }
+            self.finderDestinationTask = nil
+            guard !self.shelfItems.isEmpty, self.finderFocusProvider(), self.finderPIDProvider() == pid else { return }
+            let folder = destination?.standardizedFileURL
+            if self.destinationFolder != folder { self.destinationFolder = folder }
+        }
+    }
+
     nonisolated static func isSupportedShelfURL(_ url: URL) -> Bool {
         guard url.isFileURL else { return false }
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
@@ -1027,11 +1086,18 @@ final class SnippetShelfService {
     }
 
     private static func currentFinderDestination() -> URL? {
-        guard isFinderFrontmost(), AXIsProcessTrusted(),
-              let finder = NSRunningApplication.runningApplications(
-                  withBundleIdentifier: "com.apple.finder"
-              ).first else { return nil }
-        let application = AXUIElementCreateApplication(finder.processIdentifier)
+        guard let pid = frontmostFinderPID() else { return nil }
+        return readFinderDestination(pid: pid)
+    }
+
+    private static func frontmostFinderPID() -> pid_t? {
+        guard isFinderFrontmost(), AXIsProcessTrusted() else { return nil }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier
+    }
+
+    nonisolated private static func readFinderDestination(pid: pid_t) -> URL? {
+        let application = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(application, 0.2)
         var focusedValue: CFTypeRef?
         let focusedWindowStatus = AXUIElementCopyAttributeValue(
             application,
@@ -1040,21 +1106,23 @@ final class SnippetShelfService {
         )
         if focusedWindowStatus != .success || focusedValue == nil {
             var windowsValue: CFTypeRef?
-            if AXUIElementCopyAttributeValue(
+            let windowsStatus = AXUIElementCopyAttributeValue(
                 application,
                 kAXWindowsAttribute as CFString,
                 &windowsValue
-            ) == .success,
-               let windows = windowsValue as? [AXUIElement] {
+            )
+            guard windowsStatus == .success || windowsStatus == .noValue else { return nil }
+            if let windows = windowsValue as? [AXUIElement] {
                 focusedValue = windows.first
             }
         }
         guard let focusedValue else {
-            return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
-                ? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-                : nil
+            // A timeout is not evidence that Finder is showing the Desktop.
+            guard focusedWindowStatus == .success || focusedWindowStatus == .noValue else { return nil }
+            return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         }
         let window = unsafeDowncast(focusedValue, to: AXUIElement.self)
+        AXUIElementSetMessagingTimeout(window, 0.2)
         var documentValue: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             window,

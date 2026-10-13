@@ -21,11 +21,11 @@ MacScope combines live system telemetry, safe process management, reversible mac
 
 ## Download
 
-Download MacScope 0.1.1 for Apple-silicon Macs running macOS 14 or newer:
+Download MacScope 0.1.2 for Apple-silicon Macs running macOS 14 or newer:
 
-- [Download the drag-to-Applications DMG](https://github.com/rsm23/macscope/releases/download/v0.1.1/MacScope-0.1.1-arm64.dmg)
-- [Verify its SHA-256 checksum](https://github.com/rsm23/macscope/releases/download/v0.1.1/MacScope-0.1.1-arm64.dmg.sha256)
-- [Download the ZIP archive](https://github.com/rsm23/macscope/releases/download/v0.1.1/MacScope-0.1.1-arm64.zip)
+- [Download the drag-to-Applications DMG](https://github.com/rsm23/macscope/releases/download/v0.1.2/MacScope-0.1.2-arm64.dmg)
+- [Verify its SHA-256 checksum](https://github.com/rsm23/macscope/releases/download/v0.1.2/MacScope-0.1.2-arm64.dmg.sha256)
+- [Download the ZIP archive](https://github.com/rsm23/macscope/releases/download/v0.1.2/MacScope-0.1.2-arm64.zip)
 
 The release is signed with an Apple Developer ID, notarized by Apple, and stapled for offline Gatekeeper verification. Open the DMG and drag MacScope to Applications; no security bypass is required.
 
@@ -262,7 +262,20 @@ NOTARY_KEYCHAIN_PROFILE=MacScopeNotary NOTARY_TEAM_ID=YOUR_TEAM_ID \
 
 The release script validates the Keychain profile with Apple and selects the matching Team ID identity. It signs, notarizes, staples, and Gatekeeper-checks the app; then it signs, notarizes, staples, and Gatekeeper-checks the DMG before producing final SHA-256 checksums. An environment file is read only when `MACSCOPE_ENV_FILE` is explicitly set.
 
-GitHub Actions test every push, validate mobile changes, and deploy the static landing page. The manually dispatched mobile workflow starts production Android App Bundle and iOS App Store EAS builds when `EXPO_TOKEN` is configured. The `Release MacScope` workflow can also be run manually and runs automatically for `v*` tags. It imports the Developer ID identity into an ephemeral keychain, signs and notarizes the app and DMG, verifies Gatekeeper, uploads the build artifacts, and publishes tag releases. The workflow fails closed if any signing or notarization secret is missing, so only verified Developer ID releases are published.
+To publish a verified local build without GitHub Actions, commit the release version, push its tag, and upload the four distribution files with the authenticated GitHub CLI:
+
+```sh
+git tag v0.1.2
+git push origin main v0.1.2
+gh release create v0.1.2 \
+  dist/MacScope-0.1.2-arm64.dmg dist/MacScope-0.1.2-arm64.dmg.sha256 \
+  dist/MacScope-0.1.2-arm64.zip dist/MacScope-0.1.2-arm64.zip.sha256 \
+  --verify-tag --title "MacScope 0.1.2" --notes-file /path/to/release-notes.md
+```
+
+GitHub Pages serves the committed static site from the `gh-pages` branch at `/`. After committing the download links in `site/`, run `./Scripts/publish-site.sh` to copy only the committed site files to that branch and request a Pages build. The script preserves the custom domain through `site/CNAME`; `.nojekyll` skips Jekyll processing. Check the build status with `gh api repos/rsm23/macscope/pages/builds/latest` and verify the live download links before announcing the update. This route does not require the repository's custom Actions deployment workflow.
+
+GitHub Actions test every push and validate mobile changes. The manually dispatched mobile workflow starts production Android App Bundle and iOS App Store EAS builds when `EXPO_TOKEN` is configured. The `Release MacScope` workflow can also be run manually and runs automatically for `v*` tags. It imports the Developer ID identity into an ephemeral keychain, signs and notarizes the app and DMG, verifies Gatekeeper, uploads the build artifacts, and publishes tag releases. The workflow fails closed if any signing or notarization secret is missing, so only verified Developer ID releases are published. The local release and branch-based Pages publishing commands above provide a separate route when hosted Actions jobs cannot start.
 
 ## Known boundaries
 

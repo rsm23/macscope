@@ -316,15 +316,13 @@ struct MacScopeApp: App {
         .defaultSize(width: 520, height: 82)
 
         Window("MacScope Preview", id: "dock-preview") {
-            ScrollView {
-                MenuBarPanel(model: model)
-            }
-            .background(MacScopeTheme.contentBackground)
-            .tint(MacScopeTheme.accent)
-            .preferredColorScheme(preferredColorScheme)
+            MenuBarPanel(model: model)
+                .background(MacScopeTheme.contentBackground)
+                .tint(MacScopeTheme.accent)
+                .preferredColorScheme(preferredColorScheme)
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 420, height: 620)
+        .windowResizability(.contentSize)
 
         MenuBarExtra {
             MenuBarPanel(model: model)

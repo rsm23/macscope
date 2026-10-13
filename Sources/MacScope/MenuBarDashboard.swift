@@ -406,6 +406,11 @@ struct MenuBarPanel: View {
     @AppStorage("menuBarPanelHiddenTabs") private var storedHiddenTabs = ""
     @AppStorage(UtilityFeatureStore.disabledKey) private var disabledModules = ""
 
+    init(model: AppModel, initialTab: MenuBarPanelTab = .overview) {
+        self.model = model
+        _selectedTab = State(initialValue: initialTab)
+    }
+
     private var visibleTabs: [MenuBarPanelTab] {
         MenuBarPanelTab.ordered(from: storedTabOrder).filter { tab in
             let featureAvailable = tab != .windows
@@ -428,30 +433,35 @@ struct MenuBarPanel: View {
             }
             .pickerStyle(.segmented)
 
-            Group {
-                switch selectedTab {
-                case .overview:
-                    overviewPanel(dashboard)
-                case .audio:
-                    MenuBarAudioPanel(mixer: model.audioMixer) {
-                        showMainWindow(section: .utilities)
-                    }
-                case .disk:
-                    MenuBarDiskPanel(disks: model.snapshot.disks) {
-                        showMainWindow(section: .storage)
-                    }
-                case .windows:
-                    MenuBarWindowsPanel()
-                case .quick:
-                    MenuBarQuickPanel(
-                        screenshots: model.screenshots,
-                        keepAwake: model.keepAwake,
-                        toggles: model.quickToggles
-                    ) {
-                        showMainWindow(section: .utilities)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    switch selectedTab {
+                    case .overview:
+                        overviewPanel(dashboard)
+                    case .audio:
+                        MenuBarAudioPanel(mixer: model.audioMixer) {
+                            showMainWindow(section: .utilities)
+                        }
+                    case .disk:
+                        MenuBarDiskPanel(disks: model.snapshot.disks) {
+                            showMainWindow(section: .storage)
+                        }
+                    case .windows:
+                        MenuBarWindowsPanel()
+                    case .quick:
+                        MenuBarQuickPanel(
+                            screenshots: model.screenshots,
+                            keepAwake: model.keepAwake,
+                            toggles: model.quickToggles
+                        ) {
+                            showMainWindow(section: .utilities)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .id(selectedTab)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             Divider()
 
@@ -496,7 +506,7 @@ struct MenuBarPanel: View {
             .controlSize(.small)
         }
         .padding(12)
-        .frame(width: 396)
+        .frame(width: 396, height: 440)
         .task { model.audioMixer.start() }
         .onAppear { selectAvailableTab() }
         .onChange(of: storedTabOrder) { _, _ in selectAvailableTab() }
@@ -638,38 +648,35 @@ private struct MenuBarWindowsPanel: View {
                 )
                 .frame(height: 150)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(service.windows.prefix(20)) { window in
-                            Button {
-                                service.activate(window)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    if let thumbnail = service.thumbnails[window.id] {
-                                        Image(nsImage: thumbnail)
-                                            .resizable().scaledToFill()
-                                            .frame(width: 92, height: 54).clipped()
-                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    } else {
-                                        Image(nsImage: window.icon)
-                                            .resizable().scaledToFit().frame(width: 32, height: 32)
-                                            .frame(width: 92, height: 54)
-                                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(window.title).font(.callout.weight(.medium)).lineLimit(1)
-                                        Text("\(window.ownerName) · \(window.isOnScreen ? "Visible" : "Minimized")")
-                                            .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                                    }
-                                    Spacer(minLength: 0)
+                LazyVStack(spacing: 8) {
+                    ForEach(service.windows.prefix(20)) { window in
+                        Button {
+                            service.activate(window)
+                        } label: {
+                            HStack(spacing: 10) {
+                                if let thumbnail = service.thumbnails[window.id] {
+                                    Image(nsImage: thumbnail)
+                                        .resizable().scaledToFill()
+                                        .frame(width: 92, height: 54).clipped()
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                } else {
+                                    Image(nsImage: window.icon)
+                                        .resizable().scaledToFit().frame(width: 32, height: 32)
+                                        .frame(width: 92, height: 54)
+                                        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                                 }
-                                .contentShape(Rectangle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(window.title).font(.callout.weight(.medium)).lineLimit(1)
+                                    Text("\(window.ownerName) · \(window.isOnScreen ? "Visible" : "Minimized")")
+                                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                .frame(maxHeight: 260)
             }
             if let status = service.statusMessage {
                 Text(status).font(.caption2).foregroundStyle(.secondary).lineLimit(2)

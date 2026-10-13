@@ -400,6 +400,8 @@ enum MenuBarReadoutMetric: String, CaseIterable, Identifiable {
 
 struct MenuBarPanel: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.dismissWindow) private var dismissWindow
     let model: AppModel
     @State private var selectedTab = MenuBarPanelTab.overview
     @AppStorage("menuBarPanelTabOrder") private var storedTabOrder = ""
@@ -475,7 +477,7 @@ struct MenuBarPanel: View {
 
                 Spacer(minLength: 4)
 
-                SettingsLink {
+                Button(action: showSettings) {
                     Image(systemName: "gearshape")
                         .frame(width: 24, height: 24)
                 }
@@ -580,6 +582,16 @@ struct MenuBarPanel: View {
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.async {
             NSApp.windows.first(where: { $0.canBecomeMain && $0.title != "Settings" })?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func showSettings() {
+        dismissWindow(id: "dock-preview")
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+        // The settings scene is presented asynchronously; activate after the panel yields focus.
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 

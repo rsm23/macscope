@@ -1104,6 +1104,26 @@ img {
   font: 0.7rem/1.55 var(--font-mono);
 }
 
+.platform-status {
+  max-width: 34rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 7rem;
+}
+
+.platform-status h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.platform-status p {
+  margin: 0.5rem 0 0;
+  color: #abb5c2;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
 .text-link {
   margin-top: 0.45rem;
   color: var(--blue-2);

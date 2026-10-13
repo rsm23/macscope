@@ -21,11 +21,11 @@ MacScope combines live system telemetry, safe process management, reversible mac
 
 ## Download
 
-Download MacScope 0.1.3 for Apple-silicon Macs running macOS 14 or newer:
+Download MacScope 0.1.4 for Apple-silicon Macs running macOS 14 or newer:
 
-- [Download the drag-to-Applications DMG](https://github.com/rsm23/macscope/releases/download/v0.1.3/MacScope-0.1.3-arm64.dmg)
-- [Verify its SHA-256 checksum](https://github.com/rsm23/macscope/releases/download/v0.1.3/MacScope-0.1.3-arm64.dmg.sha256)
-- [Download the ZIP archive](https://github.com/rsm23/macscope/releases/download/v0.1.3/MacScope-0.1.3-arm64.zip)
+- [Download the drag-to-Applications DMG](https://github.com/rsm23/macscope/releases/download/v0.1.4/MacScope-0.1.4-arm64.dmg)
+- [Verify its SHA-256 checksum](https://github.com/rsm23/macscope/releases/download/v0.1.4/MacScope-0.1.4-arm64.dmg.sha256)
+- [Download the ZIP archive](https://github.com/rsm23/macscope/releases/download/v0.1.4/MacScope-0.1.4-arm64.zip)
 
 The release is signed with an Apple Developer ID, notarized by Apple, and stapled for offline Gatekeeper verification. Open the DMG and drag MacScope to Applications; no security bypass is required.
 
